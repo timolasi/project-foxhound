@@ -11,7 +11,7 @@ git format-patch -R 713683b^...c134791
 Note: see the commit SHAs from 96.0.1 and 96.0.3
 
 
-
+````
 REVERT CHANGES (33 Commits) FROM 96.0.3 to 96.0.1 in timolasi/project-foxhound:
 On branch downstream-merge-96.0.1
 Your branch is up to date with 'origin/downstream-merge-96.0.1'.
@@ -62,3 +62,4 @@ $ git revert --no-edit -n -s 7ef1f0e80025adf8b0b825c4698a3847adb1966e
 $ git revert --no-edit -n -s 8faefe680cd30db5c1ea9652d314fff3dda26b15
 $ git revert --no-edit -n -s 0669f3eca7b1b37bb6190e97389e280df7d7ca0a
 $ git revert --no-edit -n -s 136cd85c3504630133d8f9cad673647f2e42b33b
+````

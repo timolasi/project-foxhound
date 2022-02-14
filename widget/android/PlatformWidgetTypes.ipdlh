@@ -14,7 +14,6 @@ namespace widget {
 struct AndroidCompositorWidgetInitData
 {
   int32_t widgetId;
-  LayoutDeviceIntSize clientSize;
 };
 
 union CompositorWidgetInitData

@@ -1038,9 +1038,9 @@ void CanonicalBrowsingContext::RemoveFromSessionHistory(const nsID& aChangeID) {
       BrowsingContext* rootBC = shistory->GetBrowsingContext();
       if (rootBC) {
         if (!rootBC->IsInProcess()) {
-          if (ContentParent* cp = rootBC->Canonical()->GetContentParent()) {
-            Unused << cp->SendDispatchLocationChangeEvent(rootBC);
-          }
+          Unused << rootBC->Canonical()
+                        ->GetContentParent()
+                        ->SendDispatchLocationChangeEvent(rootBC);
         } else if (rootBC->GetDocShell()) {
           rootBC->GetDocShell()->DispatchLocationChangeEvent();
         }

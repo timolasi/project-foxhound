@@ -27,7 +27,7 @@ const SEARCH_AD_CLICKS_SCALAR_BASE = "browser.search.adclicks.";
 const SEARCH_DATA_TRANSFERRED_SCALAR = "browser.search.data_transferred";
 const SEARCH_TELEMETRY_PRIVATE_BROWSING_KEY_SUFFIX = "pb";
 
-const TELEMETRY_SETTINGS_KEY = "search-telemetry-v2";
+const TELEMETRY_SETTINGS_KEY = "search-telemetry";
 
 XPCOMUtils.defineLazyGetter(this, "logConsole", () => {
   return console.createInstance({
@@ -476,23 +476,19 @@ class TelemetryHandler {
     let code;
     if (searchProviderInfo.codeParamName) {
       code = queries.get(searchProviderInfo.codeParamName);
-      if (code) {
-        // The code is only included if it matches one of the specific ones.
-        if (searchProviderInfo.taggedCodes.includes(code)) {
+      if (
+        code &&
+        searchProviderInfo.codePrefixes.some(p => code.startsWith(p))
+      ) {
+        if (
+          searchProviderInfo.followOnParamNames &&
+          searchProviderInfo.followOnParamNames.some(p => queries.has(p))
+        ) {
+          oldType = "sap-follow-on";
+          type = "tagged-follow-on";
+        } else {
           oldType = "sap";
           type = "tagged";
-          if (
-            searchProviderInfo.followOnParamNames &&
-            searchProviderInfo.followOnParamNames.some(p => queries.has(p))
-          ) {
-            oldType += "-follow-on";
-            type += "-follow-on";
-          }
-        } else if (searchProviderInfo.organicCodes.includes(code)) {
-          oldType = "organic";
-          type = "organic";
-        } else {
-          code = "other";
         }
       } else if (searchProviderInfo.followOnCookies) {
         // Especially Bing requires lots of extra work related to cookies.
@@ -523,7 +519,7 @@ class TelemetryHandler {
               .map(p => p.trim());
             if (
               cookieParam == followOnCookie.codeParamName &&
-              searchProviderInfo.taggedCodes.includes(cookieValue)
+              followOnCookie.codePrefixes.some(p => cookieValue.startsWith(p))
             ) {
               oldType = "sap-follow-on";
               type = "tagged-follow-on";

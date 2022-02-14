@@ -44,7 +44,7 @@ class AndroidCompositorWidget : public CompositorWidget {
       gfx::DrawTarget* aDrawTarget,
       const LayoutDeviceIntRegion& aInvalidRegion) override;
 
-  bool OnResumeComposition() override;
+  void OnResumeComposition() override;
 
   AndroidCompositorWidget* AsAndroid() override { return this; }
 
@@ -56,7 +56,6 @@ class AndroidCompositorWidget : public CompositorWidget {
   ANativeWindow* mNativeWindow;
   ANativeWindow_Buffer mBuffer;
   int32_t mFormat;
-  LayoutDeviceIntSize mClientSize;
 };
 
 }  // namespace widget

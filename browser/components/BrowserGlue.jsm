@@ -2527,6 +2527,12 @@ BrowserGlue.prototype = {
 
       {
         task: () => {
+          UrlbarQuickSuggest.maybeShowOnboardingDialog();
+        },
+      },
+
+      {
+        task: () => {
           let { setTimeout } = ChromeUtils.import(
             "resource://gre/modules/Timer.jsm"
           );
@@ -4103,10 +4109,7 @@ BrowserGlue.prototype = {
     if (willPrompt) {
       let win = BrowserWindowTracker.getTopWindow();
       DefaultBrowserCheck.prompt(win);
-    } else if (await UrlbarQuickSuggest.maybeShowOnboardingDialog()) {
-      return;
     }
-
     await ASRouter.waitForInitialized;
     ASRouter.sendTriggerMessage({
       browser: BrowserWindowTracker.getTopWindow()?.gBrowser.selectedBrowser,

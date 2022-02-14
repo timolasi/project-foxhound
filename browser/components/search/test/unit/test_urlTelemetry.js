@@ -43,15 +43,6 @@ const TESTS = [
   {
     title: "Google organic",
     trackingUrl:
-      "https://www.google.com/search?client=firefox-b-d-invalid&source=hp&ei=EI_VALUE&q=test&oq=test&gs_l=GS_L_VALUE",
-    expectedSearchCountEntry: "google.in-content:organic:other",
-    expectedAdKey: "google:organic",
-    adUrls: ["https://www.googleadservices.com/aclk=foobar"],
-    nonAdUrls: ["https://www.googleadservices.com/?aclk=foobar"],
-  },
-  {
-    title: "Google organic no code",
-    trackingUrl:
       "https://www.google.com/search?source=hp&ei=EI_VALUE&q=test&oq=test&gs_l=GS_L_VALUE",
     expectedSearchCountEntry: "google.in-content:organic:none",
     expectedAdKey: "google:organic",
@@ -101,7 +92,7 @@ const TESTS = [
         "www.bing.com",
         "/",
         "SRCHS",
-        "PC=MOZI",
+        "PC=MOZ",
         false,
         false,
         false,
@@ -117,18 +108,10 @@ const TESTS = [
     title: "Bing search access point follow-on",
     trackingUrl:
       "https://www.bing.com/search?q=test&qs=n&form=QBRE&sp=-1&pq=&sc=0-0&sk=&cvid=CVID_VALUE",
-    expectedSearchCountEntry: "bing.in-content:sap-follow-on:MOZI",
+    expectedSearchCountEntry: "bing.in-content:sap-follow-on:MOZ",
   },
   {
     title: "Bing organic",
-    trackingUrl: "https://www.bing.com/search?q=test&pc=MOZIfoo&form=MOZLBR",
-    expectedSearchCountEntry: "bing.in-content:organic:other",
-    expectedAdKey: "bing:organic",
-    adUrls: ["https://www.bing.com/aclick?ld=foo"],
-    nonAdUrls: ["https://www.bing.com/fd/ls/ls.gif?IG=foo"],
-  },
-  {
-    title: "Bing organic no code",
     trackingUrl:
       "https://www.bing.com/search?q=test&qs=n&form=QBLH&sp=-1&pq=&sc=0-0&sk=&cvid=CVID_VALUE",
     expectedSearchCountEntry: "bing.in-content:organic:none",
@@ -155,15 +138,7 @@ const TESTS = [
   {
     title: "DuckDuckGo organic",
     trackingUrl: "https://duckduckgo.com/?q=test&t=hi&ia=news",
-    expectedSearchCountEntry: "duckduckgo.in-content:organic:other",
-    expectedAdKey: "duckduckgo:organic",
-    adUrls: ["https://duckduckgo.com/y.js?ad_provider=foo"],
-    nonAdUrls: ["https://duckduckgo.com/?q=foo&t=ffab&ia=images&iax=images"],
-  },
-  {
-    title: "DuckDuckGo organic no code",
-    trackingUrl: "https://duckduckgo.com/?q=test&ia=news",
-    expectedSearchCountEntry: "duckduckgo.in-content:organic:none",
+    expectedSearchCountEntry: "duckduckgo.in-content:organic:hi",
     expectedAdKey: "duckduckgo:organic",
     adUrls: ["https://duckduckgo.com/y.js?ad_provider=foo"],
     nonAdUrls: ["https://duckduckgo.com/?q=foo&t=ffab&ia=images&iax=images"],
@@ -185,14 +160,8 @@ const TESTS = [
   {
     title: "Baidu organic",
     trackingUrl:
-      "https://www.baidu.com/s?ie=utf-8&f=8&rsv_bp=1&rsv_idx=1&ch=&tn=baidu&bar=&wd=test&rn=&oq&rsv_pq=RSV_PQ_VALUE&rsv_t=RSV_T_VALUE&rqlang=cn",
-    expectedSearchCountEntry: "baidu.in-content:organic:other",
-  },
-  {
-    title: "Baidu organic no code",
-    trackingUrl:
-      "https://www.baidu.com/s?ie=utf-8&f=8&rsv_bp=1&rsv_idx=1&ch=&bar=&wd=test&rn=&oq&rsv_pq=RSV_PQ_VALUE&rsv_t=RSV_T_VALUE&rqlang=cn",
-    expectedSearchCountEntry: "baidu.in-content:organic:none",
+      "https://www.baidu.com/s?ie=utf-8&f=8&rsv_bp=1&rsv_idx=1&ch=&tn=baidu&bar=&wd=test&rn=&oq=&rsv_pq=RSV_PQ_VALUE&rsv_t=RSV_T_VALUE&rqlang=cn",
+    expectedSearchCountEntry: "baidu.in-content:organic:baidu",
   },
 ];
 
@@ -264,11 +233,12 @@ add_task(async function test_parsing_search_urls() {
       },
       test.trackingUrl
     );
-    let histogram = Services.telemetry.getKeyedHistogramById("SEARCH_COUNTS");
-    let snapshot = histogram.snapshot();
-    Assert.ok(snapshot);
+    const hs = Services.telemetry
+      .getKeyedHistogramById("SEARCH_COUNTS")
+      .snapshot();
+    Assert.ok(hs);
     Assert.ok(
-      test.expectedSearchCountEntry in snapshot,
+      test.expectedSearchCountEntry in hs,
       "The histogram must contain the correct key"
     );
 
@@ -284,6 +254,5 @@ add_task(async function test_parsing_search_urls() {
     if (test.tearDown) {
       test.tearDown();
     }
-    histogram.clear();
   }
 });

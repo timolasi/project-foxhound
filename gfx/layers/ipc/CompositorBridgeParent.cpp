@@ -619,9 +619,9 @@ void CompositorBridgeParent::ResumeComposition() {
 
   MonitorAutoLock lock(mResumeCompositionMonitor);
 
-  bool resumed = mWidget->OnResumeComposition();
-  resumed = resumed && mWrBridge->Resume();
+  mWidget->OnResumeComposition();
 
+  bool resumed = mWrBridge->Resume();
   if (!resumed) {
 #ifdef MOZ_WIDGET_ANDROID
     // We can't get a surface. This could be because the activity changed

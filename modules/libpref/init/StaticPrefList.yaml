@@ -9382,7 +9382,7 @@
 
 - name: network.cookie.sameSite.schemeful
   type: bool
-  value: false
+  value: true
   mirror: always
 
 - name: network.cookie.thirdparty.sessionOnly

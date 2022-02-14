@@ -6,7 +6,6 @@
 
 #include "AndroidCompositorWidget.h"
 
-#include "mozilla/gfx/Logging.h"
 #include "mozilla/widget/PlatformWidgetTypes.h"
 #include "nsWindow.h"
 
@@ -19,8 +18,7 @@ AndroidCompositorWidget::AndroidCompositorWidget(
     : CompositorWidget(aOptions),
       mWidgetId(aInitData.widgetId()),
       mNativeWindow(nullptr),
-      mFormat(WINDOW_FORMAT_RGBA_8888),
-      mClientSize(aInitData.clientSize()) {}
+      mFormat(WINDOW_FORMAT_RGBA_8888) {}
 
 AndroidCompositorWidget::~AndroidCompositorWidget() {
   if (mNativeWindow) {
@@ -75,29 +73,8 @@ void AndroidCompositorWidget::EndRemoteDrawingInRegion(
   ANativeWindow_unlockAndPost(mNativeWindow);
 }
 
-bool AndroidCompositorWidget::OnResumeComposition() {
+void AndroidCompositorWidget::OnResumeComposition() {
   OnCompositorSurfaceChanged();
-
-  if (!mSurface) {
-    gfxCriticalError() << "OnResumeComposition called with null Surface";
-    return false;
-  }
-
-  JNIEnv* const env = jni::GetEnvForThread();
-  ANativeWindow* const nativeWindow =
-      ANativeWindow_fromSurface(env, reinterpret_cast<jobject>(mSurface.Get()));
-  if (!nativeWindow) {
-    gfxCriticalError() << "OnResumeComposition called with invalid Surface";
-    return false;
-  }
-
-  const int32_t width = ANativeWindow_getWidth(nativeWindow);
-  const int32_t height = ANativeWindow_getHeight(nativeWindow);
-  mClientSize = LayoutDeviceIntSize(width, height);
-
-  ANativeWindow_release(nativeWindow);
-
-  return true;
 }
 
 EGLNativeWindowType AndroidCompositorWidget::GetEGLNativeWindow() {
@@ -105,7 +82,15 @@ EGLNativeWindowType AndroidCompositorWidget::GetEGLNativeWindow() {
 }
 
 LayoutDeviceIntSize AndroidCompositorWidget::GetClientSize() {
-  return mClientSize;
+  JNIEnv* const env = jni::GetEnvForThread();
+  ANativeWindow* const nativeWindow =
+      ANativeWindow_fromSurface(env, reinterpret_cast<jobject>(mSurface.Get()));
+  const int32_t width = ANativeWindow_getWidth(nativeWindow);
+  const int32_t height = ANativeWindow_getHeight(nativeWindow);
+
+  ANativeWindow_release(nativeWindow);
+
+  return LayoutDeviceIntSize(width, height);
 }
 
 }  // namespace widget

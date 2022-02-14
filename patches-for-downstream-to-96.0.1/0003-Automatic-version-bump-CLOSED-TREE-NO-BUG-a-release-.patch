@@ -1,0 +1,39 @@
+From 2b268a5aa4b4fe8f4ef555e2c3178bf0e7694d29 Mon Sep 17 00:00:00 2001
+From: Mozilla Releng Treescript <release+treescript@mozilla.org>
+Date: Fri, 14 Jan 2022 14:15:10 +0000
+Subject: [PATCH 03/33] Automatic version bump CLOSED TREE NO BUG a=release
+ DONTBUILD
+
+---
+ browser/config/version.txt         | 2 +-
+ browser/config/version_display.txt | 2 +-
+ config/milestone.txt               | 2 +-
+ 3 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git b/browser/config/version.txt a/browser/config/version.txt
+index d1e05eaa92cb..a1e4fa5f81ee 100644
+--- b/browser/config/version.txt
++++ a/browser/config/version.txt
+@@ -1 +1 @@
+-96.0.2
++96.0.1
+diff --git b/browser/config/version_display.txt a/browser/config/version_display.txt
+index d1e05eaa92cb..a1e4fa5f81ee 100644
+--- b/browser/config/version_display.txt
++++ a/browser/config/version_display.txt
+@@ -1 +1 @@
+-96.0.2
++96.0.1
+diff --git b/config/milestone.txt a/config/milestone.txt
+index e785d00059d8..91dbd303b6fe 100644
+--- b/config/milestone.txt
++++ a/config/milestone.txt
+@@ -10,4 +10,4 @@
+ # hardcoded milestones in the tree from these two files.
+ #--------------------------------------------------------
+ 
+-96.0.2
++96.0.1
+-- 
+2.25.1
+

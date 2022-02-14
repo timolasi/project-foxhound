@@ -1,0 +1,61 @@
+From a6f506346a54345333369432db9ff1dc0deb8507 Mon Sep 17 00:00:00 2001
+From: Daisuke Akatsuka <daisuke@birchill.co.jp>
+Date: Thu, 13 Jan 2022 00:35:54 +0000
+Subject: [PATCH 16/33] Bug 1749740: Add a tooltip for the X close button.
+ r=adw, a=RyanVM,dsmith
+
+Differential Revision: https://phabricator.services.mozilla.com/D135755
+---
+ browser/components/urlbar/content/firefoxSuggest.ftl           | 3 ---
+ browser/components/urlbar/content/quicksuggestOnboarding.html  | 3 +--
+ .../browser/browser_quicksuggest_onboardingDialog.js           | 3 +--
+ 3 files changed, 2 insertions(+), 7 deletions(-)
+
+diff --git b/browser/components/urlbar/content/firefoxSuggest.ftl a/browser/components/urlbar/content/firefoxSuggest.ftl
+index 6d493da40fb1..15b9f4b9d6d3 100644
+--- b/browser/components/urlbar/content/firefoxSuggest.ftl
++++ a/browser/components/urlbar/content/firefoxSuggest.ftl
+@@ -110,9 +110,6 @@ firefox-suggest-onboarding-introduction-title-7 =
+ 
+ ##
+ 
+-firefox-suggest-onboarding-introduction-close-button =
+-  .title = Close
+-
+ firefox-suggest-onboarding-introduction-next-button-1 = Find out how
+ firefox-suggest-onboarding-introduction-next-button-2 = Find out more
+ 
+diff --git b/browser/components/urlbar/content/quicksuggestOnboarding.html a/browser/components/urlbar/content/quicksuggestOnboarding.html
+index cdcdf2debcc6..f17967413194 100644
+--- b/browser/components/urlbar/content/quicksuggestOnboarding.html
++++ a/browser/components/urlbar/content/quicksuggestOnboarding.html
+@@ -22,9 +22,8 @@
+         aria-labelledby="introduction-title">
+     <section id="introduction-section">
+       <button id="onboardingClose"
+-              class="ghost-button"
+               tabindex="2"
+-              data-l10n-id="firefox-suggest-onboarding-introduction-close-button">
++              class="ghost-button">
+         <img src="chrome://global/skin/icons/close.svg" />
+       </button>
+       <span class="logo" role="presentation"></span>
+diff --git b/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js a/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js
+index 4900a8ac9091..3b9049b96f37 100644
+--- b/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js
++++ a/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js
+@@ -176,10 +176,9 @@ add_task(async function close() {
+       info("Calling showOnboardingDialog");
+       const { win, maybeShowPromise } = await showOnboardingDialog();
+ 
+-      info("Check the status of the close button");
++      info("Check the visibility of the close button");
+       const closeButton = win.document.getElementById("onboardingClose");
+       Assert.ok(BrowserTestUtils.is_visible(closeButton));
+-      Assert.equal(closeButton.getAttribute("title"), "Close");
+ 
+       info("Click on the close button");
+       closeButton.click();
+-- 
+2.25.1
+

@@ -1,0 +1,92 @@
+From 11053e4be8b7f1881c99245eea52c69221c7d2cc Mon Sep 17 00:00:00 2001
+From: Drew Willcoxon <adw@mozilla.com>
+Date: Mon, 17 Jan 2022 20:20:14 +0000
+Subject: [PATCH 18/33] Bug 1750390 - Don't show the Firefox Suggest online
+ opt-in modal on top of about:welcome. r=nanj, a=RyanVM,dsmith
+
+The logic we added to `_maybeShowDefaultBrowserPrompt()` in BrowserGlue in
+D135308 isn't enough to prevent the modal from opening on top of about:welcome.
+AFAICT the decision to open about:welcome isn't part of that logic at all.
+
+This revision bails out of `maybeShowOnboardingDialog()` if the top window's
+current tab is about:welcome. That seems sufficient to prevent this from
+happening in most cases. There are a couple of cases where this wouldn't work:
+
+1. about:welcome is opened *after* the Suggest modal. But so far I've never seen
+   that happen and I'm not sure it's even possible. Preventing this case would
+   require deeper integration with the logic that opens about:welcome. It would
+   also block the remainder of `_maybeShowDefaultBrowserPrompt()` that is
+   awaiting the call to `maybeShowOnboardingDialog()`, which seems like a bad
+   idea.
+2. about:welcome is open in an unselected tab. This seems very unlikely because
+   the user would need to select/open a new tab in the brief period of time
+   between when about:welcome is shown and the modal is shown. It would be
+   simple to look through all tabs in the top window (and all windows), but if
+   the profile isn't new -- which would be the common case -- and it has
+   restored a ton of tabs, it would be inefficient to look through all of them,
+   and preventing this case is just not worth that. (tabbrowser doesn't have a
+   set or map keyed on URLs that would provide O(1) lookup AFAIK.)
+
+Differential Revision: https://phabricator.services.mozilla.com/D136071
+---
+ .../components/urlbar/UrlbarQuickSuggest.jsm    |  5 -----
+ .../browser_quicksuggest_onboardingDialog.js    | 17 ++++++-----------
+ 2 files changed, 6 insertions(+), 16 deletions(-)
+
+diff --git b/browser/components/urlbar/UrlbarQuickSuggest.jsm a/browser/components/urlbar/UrlbarQuickSuggest.jsm
+index f1ed914aaf8d..c707262c7322 100644
+--- b/browser/components/urlbar/UrlbarQuickSuggest.jsm
++++ a/browser/components/urlbar/UrlbarQuickSuggest.jsm
+@@ -234,11 +234,6 @@ class Suggestions {
+ 
+     let win = BrowserWindowTracker.getTopWindow();
+ 
+-    // Don't show the dialog on top of about:welcome for new users.
+-    if (win.gBrowser?.currentURI?.spec == "about:welcome") {
+-      return false;
+-    }
+-
+     let variationType;
+     try {
+       // An error happens if the pref is not in user prefs.
+diff --git b/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js a/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js
+index 07c0fd67487c..4900a8ac9091 100644
+--- b/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js
++++ a/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js
+@@ -38,27 +38,22 @@ add_task(async function setup() {
+ 
+ // When the user has already enabled the data-collection pref, the dialog should
+ // not appear.
+-add_task(async function dataCollectionAlreadyEnabled() {
++add_task(async function onboardingShouldNotAppear() {
+   setDialogPrereqPrefs();
++
++  UrlbarPrefs.set("suggest.quicksuggest.nonsponsored", false);
++  UrlbarPrefs.set("suggest.quicksuggest.sponsored", false);
+   UrlbarPrefs.set("quicksuggest.dataCollection.enabled", true);
+ 
+   info("Calling maybeShowOnboardingDialog");
+   let showed = await UrlbarQuickSuggest.maybeShowOnboardingDialog();
+   Assert.ok(!showed, "The dialog was not shown");
+ 
++  UrlbarPrefs.clear("suggest.quicksuggest.nonsponsored");
++  UrlbarPrefs.clear("suggest.quicksuggest.sponsored");
+   UrlbarPrefs.clear("quicksuggest.dataCollection.enabled");
+ });
+ 
+-// When the current tab is about:welcome, the dialog should not appear.
+-add_task(async function aboutWelcome() {
+-  setDialogPrereqPrefs();
+-  await BrowserTestUtils.withNewTab("about:welcome", async () => {
+-    info("Calling maybeShowOnboardingDialog");
+-    let showed = await UrlbarQuickSuggest.maybeShowOnboardingDialog();
+-    Assert.ok(!showed, "The dialog was not shown");
+-  });
+-});
+-
+ // Test for transition from introduction to main.
+ add_task(async function transition() {
+   await doTransitionTest({
+-- 
+2.25.1
+

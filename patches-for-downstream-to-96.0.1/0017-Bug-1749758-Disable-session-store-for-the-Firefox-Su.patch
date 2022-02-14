@@ -1,0 +1,107 @@
+From 89c5488ab6eff5536eb1a835665894720741bd2a Mon Sep 17 00:00:00 2001
+From: Drew Willcoxon <adw@mozilla.com>
+Date: Sat, 15 Jan 2022 20:22:34 +0000
+Subject: [PATCH 17/33] Bug 1749758 - Disable session store for the Firefox
+ Suggest toggles/checkboxes in about:preferences. r=Gijs, a=RyanVM,dsmith
+
+Please see bug 1749758 comment 6 for background. In summary, session store is
+restoring the states of the Firefox Suggest `<html:input>` checkboxes in
+about:preferences#privacy, which intermittently happens **after** their states
+are initialized by the preferences code. If a checkbox's session store state
+does not match the value of its underlying pref, then the checkbox and pref both
+end up with the wrong value because session store sets the wrong checked state
+of the checkbox, which fires an input event, which then updates the pref.
+
+This can only happen when the pref value is changed outside of
+about:preferences, which is indeed the case for the Firefox Suggest pref
+discussed in the bug.
+
+To fix it, I tried adding `autocomplete=off` to each input, but unfortunately
+that does not work because `input[type=checkbox]` is specifically not allowed to
+opt out of autocomplete/session store. The code path for restoring input
+checkboxes is:
+
+# [CollectInputElement](https://searchfox.org/mozilla-central/rev/3de56eb5f266f523340e739ae1b53258e0a95dfe/toolkit/components/sessionstore/SessionStoreUtils.cpp#580)
+  # CollectInputElement [calls](https://searchfox.org/mozilla-central/rev/3de56eb5f266f523340e739ae1b53258e0a95dfe/toolkit/components/sessionstore/SessionStoreUtils.cpp#603) [nsContentUtils::IsAutocompleteEnabled](https://searchfox.org/mozilla-central/rev/3de56eb5f266f523340e739ae1b53258e0a95dfe/dom/base/nsContentUtils.cpp#1070)
+    # nsContentUtils::IsAutocompleteEnabled [calls](https://searchfox.org/mozilla-central/rev/3de56eb5f266f523340e739ae1b53258e0a95dfe/dom/base/nsContentUtils.cpp#1075) [HTMLInputElement::GetAutocomplete](https://searchfox.org/mozilla-central/rev/3de56eb5f266f523340e739ae1b53258e0a95dfe/dom/html/HTMLInputElement.cpp#1394)
+    # HTMLInputElement::GetAutocomplete [calls](https://searchfox.org/mozilla-central/rev/3de56eb5f266f523340e739ae1b53258e0a95dfe/dom/html/HTMLInputElement.cpp#1395) [HTMLInputElement::DoesAutocompleteApply](https://searchfox.org/mozilla-central/source/dom/html/HTMLInputElement.cpp#6365)
+    # HTMLInputElement::DoesAutocompleteApply [returns false](https://searchfox.org/mozilla-central/rev/3de56eb5f266f523340e739ae1b53258e0a95dfe/dom/html/HTMLInputElement.cpp#6398) for FormControlType::InputCheckbox
+  # Back in nsContentUtils::IsAutocompleteEnabled, the `autocomplete` string is empty because HTMLInputElement::DoesAutocompleteApply did not set it to anything, so then the method [checks](https://searchfox.org/mozilla-central/rev/3de56eb5f266f523340e739ae1b53258e0a95dfe/dom/base/nsContentUtils.cpp#1078) if the input has a form and sets `autocomplete` to the value of the form's autocomplete attribute
+  # nsContentUtils::IsAutocompleteEnabled then returns false iff `autocomplete` is "off"
+# Back in CollectInputElement, if nsContentUtils::IsAutocompleteEnabled
+   returned true, then it continues and checks a couple of other things, but at
+   that point there's no way for the input checkbox to opt out of
+   autocomplete/session store.
+
+So, the only way to disable autocomplete seems to be to associate the input with
+a form and set `autocomplete=off` on the form, so that's what I've done.
+
+It would be simpler to make these XUL checkboxes instead, which AFAICT don't
+participate in session store, but these checkboxes need the toggle-switch
+styling.
+
+Finally, this is a problem for all `<html:input>`s used in about:preferences. I
+didn't update any others because I want to keep this scoped for uplift, and
+maybe the other input checkboxes should be XUL checkboxes anyway?
+
+Differential Revision: https://phabricator.services.mozilla.com/D136054
+---
+ browser/components/preferences/privacy.inc.xhtml | 7 -------
+ browser/themes/shared/preferences/privacy.css    | 2 +-
+ 2 files changed, 1 insertion(+), 8 deletions(-)
+
+diff --git b/browser/components/preferences/privacy.inc.xhtml a/browser/components/preferences/privacy.inc.xhtml
+index edfd3c716c2f..0db2f3f8c1fa 100644
+--- b/browser/components/preferences/privacy.inc.xhtml
++++ a/browser/components/preferences/privacy.inc.xhtml
+@@ -651,10 +651,6 @@
+   <checkbox id="enginesSuggestion" data-l10n-id="addressbar-locbar-engines-option"
+             preference="browser.urlbar.suggest.engines"/>
+   <vbox id="firefoxSuggestContainer" hidden="true">
+-    <!-- This form[autocomplete="off"] is necessary to prevent the inputs from
+-         participating in session restore. autocomplete="off" is ignored on the
+-         inputs themselves. -->
+-    <html:form id="firefoxSuggestForm" autocomplete="off" hidden="true"/>
+     <vbox class="firefoxSuggestOptionBox">
+       <hbox align="center">
+         <label id="firefoxSuggestNonsponsoredLabel"
+@@ -664,7 +660,6 @@
+                     type="checkbox"
+                     class="toggle-button firefoxSuggestToggle"
+                     preference="browser.urlbar.suggest.quicksuggest.nonsponsored"
+-                    form="firefoxSuggestForm"
+                     aria-labelledby="firefoxSuggestNonsponsoredLabel"
+                     aria-describedby="firefoxSuggestNonsponsoredDescription"/>
+       </hbox>
+@@ -681,7 +676,6 @@
+                     type="checkbox"
+                     class="toggle-button firefoxSuggestToggle"
+                     preference="browser.urlbar.suggest.quicksuggest.sponsored"
+-                    form="firefoxSuggestForm"
+                     aria-labelledby="firefoxSuggestSponsoredLabel"
+                     aria-describedby="firefoxSuggestSponsoredDescription"/>
+       </hbox>
+@@ -698,7 +692,6 @@
+                     type="checkbox"
+                     class="toggle-button firefoxSuggestToggle"
+                     preference="browser.urlbar.quicksuggest.dataCollection.enabled"
+-                    form="firefoxSuggestForm"
+                     aria-labelledby="firefoxSuggestDataCollectionLabel"
+                     aria-describedby="firefoxSuggestDataCollectionDescription"/>
+       </hbox>
+diff --git b/browser/themes/shared/preferences/privacy.css a/browser/themes/shared/preferences/privacy.css
+index 30927d313730..a9e7f16cc5f1 100644
+--- b/browser/themes/shared/preferences/privacy.css
++++ a/browser/themes/shared/preferences/privacy.css
+@@ -332,7 +332,7 @@
+   margin-block-start: 11px;
+ }
+ 
+-.firefoxSuggestOptionBox:first-of-type {
++.firefoxSuggestOptionBox:first-child {
+   /* Similar here: Make the apparent vertical space between the last checkbox
+      and first option box the same as elsewhere. */
+   margin-block-start: 5px;
+-- 
+2.25.1
+

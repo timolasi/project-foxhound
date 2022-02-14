@@ -1,0 +1,179 @@
+From 7ef1f0e80025adf8b0b825c4698a3847adb1966e Mon Sep 17 00:00:00 2001
+From: Jamie Nicol <jnicol@mozilla.com>
+Date: Fri, 7 Jan 2022 10:25:53 +0000
+Subject: [PATCH 05/33] Bug 1747116 - Guard against null native window in
+ AndroidCompositorWidget r=gfx-reviewers,geckoview-reviewers,aosmond,m_kato,
+ a=dsmith
+
+If AndroidCompositorWidget's surface reference points to a surface
+that has been destroyed, we can end up with a null ANativeWindow
+pointer. This can result in crashes when using it to query the window
+size.
+
+This patch makes it so that we use the native window to query the size
+only when the surface has changed rather than for every call to
+GetClientSize(). This allows us to guard against a null pointer in a
+single place. If we have a null pointer then return false from
+OnCompositorSurfaceChanged(). CompositorBridgeParent::ResumeComposition()
+will handle that by not resuming the compositor, like it already does
+if WebRenderBridgeParent::Resume() fails.
+
+Additonally, when we receive a pause event from GeckoView ensure that
+we always set the mCompositorPaused flag to true, even if the
+UiCompositorController is null. This avoids a possible cause of the
+situation described above - if we receive a pause event (eg the app is
+minimised) during compositor reinitialization (while the
+UiCompositorController is temporarily null) we would not set that flag
+to true, and would therefore resume compositing in to an invalid
+surface.
+
+Depends on D135117
+
+Differential Revision: https://phabricator.services.mozilla.com/D135118
+---
+ gfx/layers/ipc/CompositorBridgeParent.cpp  |  4 +--
+ widget/CompositorWidget.h                  |  4 +--
+ widget/android/AndroidCompositorWidget.cpp | 31 ++++++----------------
+ widget/android/AndroidCompositorWidget.h   |  3 +--
+ widget/android/nsWindow.cpp                |  3 +--
+ 5 files changed, 13 insertions(+), 32 deletions(-)
+
+diff --git b/gfx/layers/ipc/CompositorBridgeParent.cpp a/gfx/layers/ipc/CompositorBridgeParent.cpp
+index f4769df26f86..dfc601143f37 100644
+--- b/gfx/layers/ipc/CompositorBridgeParent.cpp
++++ a/gfx/layers/ipc/CompositorBridgeParent.cpp
+@@ -619,9 +619,9 @@ void CompositorBridgeParent::ResumeComposition() {
+ 
+   MonitorAutoLock lock(mResumeCompositionMonitor);
+ 
+-  bool resumed = mWidget->OnResumeComposition();
+-  resumed = resumed && mWrBridge->Resume();
++  mWidget->OnResumeComposition();
+ 
++  bool resumed = mWrBridge->Resume();
+   if (!resumed) {
+ #ifdef MOZ_WIDGET_ANDROID
+     // We can't get a surface. This could be because the activity changed
+diff --git b/widget/CompositorWidget.h a/widget/CompositorWidget.h
+index 4d38bc622035..0c3a693f4787 100644
+--- b/widget/CompositorWidget.h
++++ a/widget/CompositorWidget.h
+@@ -195,10 +195,8 @@ class CompositorWidget {
+    *
+    * This is called from CompositorBridgeParent::ResumeComposition,
+    * immediately prior to webrender being resumed.
+-   *
+-   * Returns true if composition can be successfully resumed, else false.
+    */
+-  virtual bool OnResumeComposition() { return true; }
++  virtual void OnResumeComposition() {}
+ 
+   /**
+    * Return the size of the drawable area of the widget.
+diff --git b/widget/android/AndroidCompositorWidget.cpp a/widget/android/AndroidCompositorWidget.cpp
+index 217063637f0d..d4d9ee88e84b 100644
+--- b/widget/android/AndroidCompositorWidget.cpp
++++ a/widget/android/AndroidCompositorWidget.cpp
+@@ -6,7 +6,6 @@
+ 
+ #include "AndroidCompositorWidget.h"
+ 
+-#include "mozilla/gfx/Logging.h"
+ #include "mozilla/widget/PlatformWidgetTypes.h"
+ #include "nsWindow.h"
+ 
+@@ -19,8 +18,7 @@ AndroidCompositorWidget::AndroidCompositorWidget(
+     : CompositorWidget(aOptions),
+       mWidgetId(aInitData.widgetId()),
+       mNativeWindow(nullptr),
+-      mFormat(WINDOW_FORMAT_RGBA_8888),
+-      mClientSize(0, 0) {}
++      mFormat(WINDOW_FORMAT_RGBA_8888) {}
+ 
+ AndroidCompositorWidget::~AndroidCompositorWidget() {
+   if (mNativeWindow) {
+@@ -75,37 +73,24 @@ void AndroidCompositorWidget::EndRemoteDrawingInRegion(
+   ANativeWindow_unlockAndPost(mNativeWindow);
+ }
+ 
+-bool AndroidCompositorWidget::OnResumeComposition() {
++void AndroidCompositorWidget::OnResumeComposition() {
+   OnCompositorSurfaceChanged();
++}
+ 
+-  if (!mSurface) {
+-    gfxCriticalError() << "OnResumeComposition called with null Surface";
+-    return false;
+-  }
++EGLNativeWindowType AndroidCompositorWidget::GetEGLNativeWindow() {
++  return (EGLNativeWindowType)mSurface.Get();
++}
+ 
++LayoutDeviceIntSize AndroidCompositorWidget::GetClientSize() {
+   JNIEnv* const env = jni::GetEnvForThread();
+   ANativeWindow* const nativeWindow =
+       ANativeWindow_fromSurface(env, reinterpret_cast<jobject>(mSurface.Get()));
+-  if (!nativeWindow) {
+-    gfxCriticalError() << "OnResumeComposition called with invalid Surface";
+-    return false;
+-  }
+-
+   const int32_t width = ANativeWindow_getWidth(nativeWindow);
+   const int32_t height = ANativeWindow_getHeight(nativeWindow);
+-  mClientSize = LayoutDeviceIntSize(width, height);
+ 
+   ANativeWindow_release(nativeWindow);
+ 
+-  return true;
+-}
+-
+-EGLNativeWindowType AndroidCompositorWidget::GetEGLNativeWindow() {
+-  return (EGLNativeWindowType)mSurface.Get();
+-}
+-
+-LayoutDeviceIntSize AndroidCompositorWidget::GetClientSize() {
+-  return mClientSize;
++  return LayoutDeviceIntSize(width, height);
+ }
+ 
+ }  // namespace widget
+diff --git b/widget/android/AndroidCompositorWidget.h a/widget/android/AndroidCompositorWidget.h
+index 42779b2f7a46..f1d2e7774cca 100644
+--- b/widget/android/AndroidCompositorWidget.h
++++ a/widget/android/AndroidCompositorWidget.h
+@@ -44,7 +44,7 @@ class AndroidCompositorWidget : public CompositorWidget {
+       gfx::DrawTarget* aDrawTarget,
+       const LayoutDeviceIntRegion& aInvalidRegion) override;
+ 
+-  bool OnResumeComposition() override;
++  void OnResumeComposition() override;
+ 
+   AndroidCompositorWidget* AsAndroid() override { return this; }
+ 
+@@ -56,7 +56,6 @@ class AndroidCompositorWidget : public CompositorWidget {
+   ANativeWindow* mNativeWindow;
+   ANativeWindow_Buffer mBuffer;
+   int32_t mFormat;
+-  LayoutDeviceIntSize mClientSize;
+ };
+ 
+ }  // namespace widget
+diff --git b/widget/android/nsWindow.cpp a/widget/android/nsWindow.cpp
+index 42b30a62e9cf..e811212f2d1a 100644
+--- b/widget/android/nsWindow.cpp
++++ a/widget/android/nsWindow.cpp
+@@ -1114,10 +1114,9 @@ class LayerViewSupport final
+   void SyncPauseCompositor() {
+     MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
+ 
+-    mCompositorPaused = true;
+-
+     if (RefPtr<UiCompositorControllerChild> child =
+             GetUiCompositorControllerChild()) {
++      mCompositorPaused = true;
+       child->Pause();
+     }
+ 
+-- 
+2.25.1
+

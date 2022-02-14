@@ -1,0 +1,67 @@
+From 723f2b3dd4f885827602e56f3e79e7aaabe52421 Mon Sep 17 00:00:00 2001
+From: ffxbld <ffxbld@mozilla.com>
+Date: Mon, 24 Jan 2022 08:11:59 +0000
+Subject: [PATCH 31/33] No Bug, mozilla-release repo-update remote-settings -
+ a=repo-update, r=dsmith
+
+Differential Revision: https://phabricator.services.mozilla.com/D136708
+---
+ .../dumps/security-state/intermediates.json   | 36 +++++++++----------
+ 1 file changed, 18 insertions(+), 18 deletions(-)
+
+diff --git b/services/settings/dumps/security-state/intermediates.json a/services/settings/dumps/security-state/intermediates.json
+index 7a14b1ffe7e0..7eb55ea2094b 100644
+--- b/services/settings/dumps/security-state/intermediates.json
++++ a/services/settings/dumps/security-state/intermediates.json
+@@ -1,23 +1,5 @@
+ {
+   "data": [
+-    {
+-      "schema": 1642604268417,
+-      "derHash": "4g3/JvPDlj83AL8uEI8fnp3uJZwk+K/Q27tvzZobxZo=",
+-      "subject": "CN=E-SAFER EXTENDED SSL CA  [Run by the Issuer],O=E-SAFER CONSULTORIA EM TECNOLOGIA DA INFORMACAO LTDA,C=BR",
+-      "subjectDN": "MIGDMQswCQYDVQQGEwJCUjE9MDsGA1UEChM0RS1TQUZFUiBDT05TVUxUT1JJQSBFTSBURUNOT0xPR0lBIERBIElORk9STUFDQU8gTFREQTE1MDMGA1UEAwwsRS1TQUZFUiBFWFRFTkRFRCBTU0wgQ0EgIFtSdW4gYnkgdGhlIElzc3Vlcl0=",
+-      "whitelist": false,
+-      "attachment": {
+-        "hash": "e3d91b124334fcf0c2f4314cdcac7ea72151da2fe3a6f07852655dd32fabee0f",
+-        "size": 2316,
+-        "filename": "plm_9YONwHj1IGtrwIqZq6BKWKFZfTMWD6vczJ53lUg=.pem",
+-        "location": "security-state-staging/intermediates/8fa22e55-bb73-4e52-bfa7-8f445b589de2.pem",
+-        "mimetype": "application/x-pem-file"
+-      },
+-      "pubKeyHash": "plm/9YONwHj1IGtrwIqZq6BKWKFZfTMWD6vczJ53lUg=",
+-      "crlite_enrolled": true,
+-      "id": "c647c617-859f-4bb3-8422-a6325636759f",
+-      "last_modified": 1642777078159
+-    },
+     {
+       "schema": 1642600408228,
+       "derHash": "eu3lN07Kn/NMVyfBDbmCIi11MVd5dEm4g2T3Du+gwkw=",
+@@ -7344,6 +7326,24 @@
+       "id": "e09736ec-c1cc-43e4-bfa1-7a6a72fb8a8b",
+       "last_modified": 1635368388833
+     },
++    {
++      "schema": 1635365180434,
++      "derHash": "4g3/JvPDlj83AL8uEI8fnp3uJZwk+K/Q27tvzZobxZo=",
++      "subject": "CN=E-SAFER EXTENDED SSL CA  [Run by the Issuer],O=E-SAFER CONSULTORIA EM TECNOLOGIA DA INFORMACAO LTDA,C=BR",
++      "subjectDN": "MIGDMQswCQYDVQQGEwJCUjE9MDsGA1UEChM0RS1TQUZFUiBDT05TVUxUT1JJQSBFTSBURUNOT0xPR0lBIERBIElORk9STUFDQU8gTFREQTE1MDMGA1UEAwwsRS1TQUZFUiBFWFRFTkRFRCBTU0wgQ0EgIFtSdW4gYnkgdGhlIElzc3Vlcl0=",
++      "whitelist": false,
++      "attachment": {
++        "hash": "e3d91b124334fcf0c2f4314cdcac7ea72151da2fe3a6f07852655dd32fabee0f",
++        "size": 2316,
++        "filename": "plm_9YONwHj1IGtrwIqZq6BKWKFZfTMWD6vczJ53lUg=.pem",
++        "location": "security-state-staging/intermediates/8fa22e55-bb73-4e52-bfa7-8f445b589de2.pem",
++        "mimetype": "application/x-pem-file"
++      },
++      "pubKeyHash": "plm/9YONwHj1IGtrwIqZq6BKWKFZfTMWD6vczJ53lUg=",
++      "crlite_enrolled": false,
++      "id": "c647c617-859f-4bb3-8422-a6325636759f",
++      "last_modified": 1635368388819
++    },
+     {
+       "schema": 1635365182151,
+       "derHash": "xjHKi5oSWUVaZh4sU4jNBppwS85U+l76cGvwsJYtj/M=",
+-- 
+2.25.1
+

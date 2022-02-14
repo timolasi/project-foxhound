@@ -1,0 +1,68 @@
+From d2f7af809f5f9e9724de682537870511c8e7fa98 Mon Sep 17 00:00:00 2001
+From: Jamie Nicol <jnicol@mozilla.com>
+Date: Wed, 12 Jan 2022 16:43:51 +0000
+Subject: [PATCH 06/33] Bug 1749745 - Initialize AndroidCompositorWidget with
+ initial size. r=aosmond,agi a=RyanVM,dsmith
+
+Since bug 1747116 landed, if the compositor is reinitialized whilst
+the Android Surface is invalid, we avoid crashing when querying the
+window size and instead keep the compositor in a paused state.
+However, in this case we will believe the widget size is 0x0 until the
+compositor is eventually resumed. If webrender receives a display list
+during this time, it will set an empty view rect. This means when the
+compositor is subsequently resumed webrender believes it has nothing
+to render, and we get stuck in a state where nothing is ever rendered
+to the screen.
+
+This patch initializes the AndroidCompositorWidget with an initial
+size, which avoids the problem.
+
+Differential Revision: https://phabricator.services.mozilla.com/D135711
+---
+ widget/android/AndroidCompositorWidget.cpp | 2 +-
+ widget/android/PlatformWidgetTypes.ipdlh   | 1 -
+ widget/android/nsWindow.cpp                | 3 +--
+ 3 files changed, 2 insertions(+), 4 deletions(-)
+
+diff --git b/widget/android/AndroidCompositorWidget.cpp a/widget/android/AndroidCompositorWidget.cpp
+index 24d315a4e345..217063637f0d 100644
+--- b/widget/android/AndroidCompositorWidget.cpp
++++ a/widget/android/AndroidCompositorWidget.cpp
+@@ -20,7 +20,7 @@ AndroidCompositorWidget::AndroidCompositorWidget(
+       mWidgetId(aInitData.widgetId()),
+       mNativeWindow(nullptr),
+       mFormat(WINDOW_FORMAT_RGBA_8888),
+-      mClientSize(aInitData.clientSize()) {}
++      mClientSize(0, 0) {}
+ 
+ AndroidCompositorWidget::~AndroidCompositorWidget() {
+   if (mNativeWindow) {
+diff --git b/widget/android/PlatformWidgetTypes.ipdlh a/widget/android/PlatformWidgetTypes.ipdlh
+index cc48651479a0..c28d14ce3b21 100644
+--- b/widget/android/PlatformWidgetTypes.ipdlh
++++ a/widget/android/PlatformWidgetTypes.ipdlh
+@@ -14,7 +14,6 @@ namespace widget {
+ struct AndroidCompositorWidgetInitData
+ {
+   int32_t widgetId;
+-  LayoutDeviceIntSize clientSize;
+ };
+ 
+ union CompositorWidgetInitData
+diff --git b/widget/android/nsWindow.cpp a/widget/android/nsWindow.cpp
+index 98733ff76a6f..42b30a62e9cf 100644
+--- b/widget/android/nsWindow.cpp
++++ a/widget/android/nsWindow.cpp
+@@ -2585,8 +2585,7 @@ void nsWindow::SetCompositorWidgetDelegate(CompositorWidgetDelegate* delegate) {
+ 
+ void nsWindow::GetCompositorWidgetInitData(
+     mozilla::widget::CompositorWidgetInitData* aInitData) {
+-  *aInitData = mozilla::widget::AndroidCompositorWidgetInitData(
+-      mWidgetId, GetClientSize());
++  *aInitData = mozilla::widget::AndroidCompositorWidgetInitData(mWidgetId);
+ }
+ 
+ bool nsWindow::WidgetPaintsBackground() {
+-- 
+2.25.1
+

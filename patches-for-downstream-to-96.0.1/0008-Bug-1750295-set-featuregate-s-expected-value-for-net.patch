@@ -1,0 +1,27 @@
+From 4dad6e6f9ff2bb22c7bee9b5d18feac293cf4eba Mon Sep 17 00:00:00 2001
+From: Sebastian Hengst <archaeopteryx@coole-files.de>
+Date: Mon, 17 Jan 2022 15:53:28 +0100
+Subject: [PATCH 08/33] Bug 1750295 - set featuregate's expected value for
+ network.cookie.sameSite.schemeful to `false`. a=Aryx
+
+Bug 1750264 had switched the preference to `false`.
+---
+ toolkit/components/featuregates/Features.toml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git b/toolkit/components/featuregates/Features.toml a/toolkit/components/featuregates/Features.toml
+index cb6d17267f6f..a124db6f04ea 100644
+--- b/toolkit/components/featuregates/Features.toml
++++ a/toolkit/components/featuregates/Features.toml
+@@ -113,7 +113,7 @@ preference = "network.cookie.sameSite.schemeful"
+ type = "boolean"
+ bug-numbers = [1651119, 1617609]
+ is-public = true
+-default-value = false
++default-value = true
+ 
+ [devtools-serviceworker-debugger-support]
+ title = "experimental-features-devtools-serviceworker-debugger-support"
+-- 
+2.25.1
+

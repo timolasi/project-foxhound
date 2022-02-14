@@ -1,0 +1,27 @@
+From 6ed9a7e211e65371aed0c5b759d4378fef57d60c Mon Sep 17 00:00:00 2001
+From: Ryan VanderMeulen <ryanvm@gmail.com>
+Date: Fri, 14 Jan 2022 13:37:03 -0500
+Subject: [PATCH 04/33] Bug 1750264 - Disable cookie sameSite schemeful in
+ Firefox 96. r=dveditz, a=dsmith
+
+Differential Revision: https://phabricator.services.mozilla.com/D136028
+---
+ modules/libpref/init/StaticPrefList.yaml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git b/modules/libpref/init/StaticPrefList.yaml a/modules/libpref/init/StaticPrefList.yaml
+index 623367f601b3..59df05dc68b8 100644
+--- b/modules/libpref/init/StaticPrefList.yaml
++++ a/modules/libpref/init/StaticPrefList.yaml
+@@ -9379,7 +9379,7 @@
+ 
+ - name: network.cookie.sameSite.schemeful
+   type: bool
+-  value: false
++  value: true
+   mirror: always
+ 
+ - name: network.cookie.thirdparty.sessionOnly
+-- 
+2.25.1
+

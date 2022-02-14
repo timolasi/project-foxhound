@@ -1,0 +1,1399 @@
+From df422c169ae41f44cb2a5df6534073a5830d7df6 Mon Sep 17 00:00:00 2001
+From: Daisuke Akatsuka <daisuke@birchill.co.jp>
+Date: Fri, 7 Jan 2022 21:33:03 +0000
+Subject: [PATCH 11/33] Bug 1745026 - Part 2: Update messages and UI by Nimbus.
+ r=adw,flod, a=dsmith
+
+Differential Revision: https://phabricator.services.mozilla.com/D133993
+---
+ browser/components/urlbar/UrlbarPrefs.jsm     |   3 -
+ .../components/urlbar/UrlbarQuickSuggest.jsm  |  11 +-
+ .../urlbar/content/firefoxSuggest.ftl         |  94 +---
+ .../urlbar/content/quicksuggestOnboarding.css | 152 ++-----
+ .../content/quicksuggestOnboarding.html       |  51 +--
+ .../urlbar/content/quicksuggestOnboarding.js  | 181 +-------
+ .../browser_quicksuggest_configuration.js     |  84 ++++
+ .../browser_quicksuggest_onboardingDialog.js  | 421 +-----------------
+ .../components/nimbus/FeatureManifest.yaml    |   4 -
+ 9 files changed, 184 insertions(+), 817 deletions(-)
+
+diff --git b/browser/components/urlbar/UrlbarPrefs.jsm a/browser/components/urlbar/UrlbarPrefs.jsm
+index 93fbb4f9cc29..1f31ed92de7d 100644
+--- b/browser/components/urlbar/UrlbarPrefs.jsm
++++ a/browser/components/urlbar/UrlbarPrefs.jsm
+@@ -247,9 +247,6 @@ const PREF_URLBAR_DEFAULTS = new Map([
+   // Whether the user has opted in to data collection for quick suggest.
+   ["quicksuggest.dataCollection.enabled", false],
+ 
+-  // The version of dialog user saw.
+-  ["quicksuggest.onboardingDialogVersion", 0],
+-
+   // Whether to show the quick suggest onboarding dialog.
+   ["quicksuggest.shouldShowOnboardingDialog", true],
+ 
+diff --git b/browser/components/urlbar/UrlbarQuickSuggest.jsm a/browser/components/urlbar/UrlbarQuickSuggest.jsm
+index 0d448653563f..d32a872cf815 100644
+--- b/browser/components/urlbar/UrlbarQuickSuggest.jsm
++++ a/browser/components/urlbar/UrlbarQuickSuggest.jsm
+@@ -40,8 +40,6 @@ const NONSPONSORED_IAB_CATEGORIES = new Set(["5 - Education"]);
+ const FEATURE_AVAILABLE = "quickSuggestEnabled";
+ const SEEN_DIALOG_PREF = "quicksuggest.showedOnboardingDialog";
+ const RESTARTS_PREF = "quicksuggest.seenRestarts";
+-const DIALOG_VERSION_PREF = "quicksuggest.onboardingDialogVersion";
+-const DIALOG_VARIATION_PREF = "quickSuggestOnboardingDialogVariation";
+ 
+ // Values returned by the onboarding dialog depending on the user's response.
+ // These values are used in telemetry events, so be careful about changing them.
+@@ -257,19 +255,12 @@ class Suggestions {
+     };
+     win.addEventListener("keydown", keyListener, true);
+ 
+-    let variationType;
+-    try {
+-      // An error happens if the pref is not in user prefs.
+-      variationType = UrlbarPrefs.get(DIALOG_VARIATION_PREF).toLowerCase();
+-    } catch (e) {}
+-
+-    let params = { choice: undefined, variationType };
++    let params = { choice: undefined };
+     await win.gDialogBox.open(ONBOARDING_URI, params);
+ 
+     win.removeEventListener("keydown", keyListener, true);
+ 
+     UrlbarPrefs.set(SEEN_DIALOG_PREF, true);
+-    UrlbarPrefs.set(DIALOG_VERSION_PREF, 1);
+ 
+     // Record the user's opt-in choice on the user branch. This pref is sticky,
+     // so it will retain its user-branch value regardless of what the particular
+diff --git b/browser/components/urlbar/content/firefoxSuggest.ftl a/browser/components/urlbar/content/firefoxSuggest.ftl
+index 15b9f4b9d6d3..712d89ce7706 100644
+--- b/browser/components/urlbar/content/firefoxSuggest.ftl
++++ a/browser/components/urlbar/content/firefoxSuggest.ftl
+@@ -85,80 +85,22 @@ addressbar-firefox-suggest-info-sponsored = Based on your selection, you’ll re
+ # Data collection: on
+ addressbar-firefox-suggest-info-data = Based on your selection, you won’t receive suggestions from the web or sponsored sites. We will process your search query data to develop the { -firefox-suggest-brand-name } feature.
+ 
+-## Used as title on the introduction pane. The text can be formatted to span
+-## multiple lines as needed (line breaks are significant).
+-
+-firefox-suggest-onboarding-introduction-title-1 =
+-  Make sure you’ve got our latest
+-  search experience
+-firefox-suggest-onboarding-introduction-title-2 =
+-  We’re building a better search experience —
+-  one you can trust
+-firefox-suggest-onboarding-introduction-title-3 =
+-  We’re building a better way to find what
+-  you’re looking for on the web
+-firefox-suggest-onboarding-introduction-title-4 =
+-  A faster search experience is in the works
+-firefox-suggest-onboarding-introduction-title-5 =
+-  Together, we can create the kind of search
+-  experience the Internet deserves
+-firefox-suggest-onboarding-introduction-title-6 =
+-  Meet { -firefox-suggest-brand-name }, the next
+-  evolution in search
+-firefox-suggest-onboarding-introduction-title-7 =
+-  Find the best of the web, faster.
+-
+-##
+-
+-firefox-suggest-onboarding-introduction-next-button-1 = Find out how
+-firefox-suggest-onboarding-introduction-next-button-2 = Find out more
+-
+-## Used as title on the main pane. The text can be formatted to span
+-## multiple lines as needed (line breaks are significant).
+-
+-firefox-suggest-onboarding-main-title-1 =
+-  We’re building a richer search experience
+-firefox-suggest-onboarding-main-title-2 =
+-  Help us guide the way to the
+-  best of the Internet
+-firefox-suggest-onboarding-main-title-3 =
+-  A richer, smarter search experience
+-firefox-suggest-onboarding-main-title-4 =
+-  Finding the best of the web, faster
+-firefox-suggest-onboarding-main-title-5 =
+-  We’re building a better search experience —
+-  you can help
+-firefox-suggest-onboarding-main-title-6 =
+-  It’s time to think outside the search engine
+-firefox-suggest-onboarding-main-title-7 =
+-  We’re building a smarter search experience —
+-  one you can trust
+-firefox-suggest-onboarding-main-title-8 =
+-  Finding the best of the web should be
+-  simpler and more secure.
+-
+-##
+-
+-firefox-suggest-onboarding-main-description-1 = Allowing { -vendor-short-name } to process your search queries means you’re helping us create smarter, more relevant search suggestions. And, as always, we’ll keep your privacy top of mind.
+-firefox-suggest-onboarding-main-description-2 = When you allow { -vendor-short-name } to process your search queries, you’re helping build a better { -firefox-suggest-brand-name } for everyone. And, as always, we’ll keep your privacy top of mind.
+-firefox-suggest-onboarding-main-description-3 = What if your browser helped you zero in on what you’re actually looking for? Allowing { -vendor-short-name } to process your search queries helps us create more relevant search suggestions that still keep your privacy top of mind.
+-firefox-suggest-onboarding-main-description-4 = You’re trying to get where you’re going on the web and get on with it. When you allow { -vendor-short-name } to process your search queries, we can help you get there faster—while keeping your privacy top of mind.
+-firefox-suggest-onboarding-main-description-5 = Allowing { -vendor-short-name } to process your search queries will help us create more relevant suggestions for everyone. And, as always, we’ll keep your privacy top of mind.
+-firefox-suggest-onboarding-main-description-6 = Allowing { -vendor-short-name } to process your search queries will help us create more relevant search suggestions. We’re building { -firefox-suggest-brand-name } to help you get where you’re going on the Internet while keeping your privacy in mind.
+-firefox-suggest-onboarding-main-description-7 = Allowing { -vendor-short-name } to process your search queries helps us create more relevant search suggestions.
+-firefox-suggest-onboarding-main-description-8 = Allowing { -vendor-short-name } to process your search queries helps us provide more relevant search suggestions. We don’t use this data to profile you on the web.
+-
+-firefox-suggest-onboarding-main-privacy-first = No user profiling. Privacy-first, always.
+-
+-firefox-suggest-onboarding-main-accept-option-label = Allow. <a data-l10n-name="learn-more-link">Learn more</a>
+-
+-firefox-suggest-onboarding-main-accept-option-description-1 = Help improve the { -firefox-suggest-brand-name } feature with more relevant suggestions. Your search queries will be processed.
+-firefox-suggest-onboarding-main-accept-option-description-2 = Recommended for people who support improving the { -firefox-suggest-brand-name } feature.  Your search queries will be processed.
+-
+-firefox-suggest-onboarding-main-reject-option-label = Don’t allow.
+-
+-firefox-suggest-onboarding-main-reject-option-description-1 = Keep the default { -firefox-suggest-brand-name } experience with the strictest data-sharing controls.
+-firefox-suggest-onboarding-main-reject-option-description-2 = Recommended for people who prefer the strictest data-sharing controls. Keep the default experience.
+-
++## These strings are used in the introduction pane of the Firefox Suggest online
++## onboarding opt-in dialog.
++
++firefox-suggest-onboarding-introduction-title = Make sure you’ve got our newest search experience
++firefox-suggest-onboarding-introduction-button = Next
++
++## These strings are used in the main pane of the Firefox Suggest online
++## onboarding opt-in dialog. Options are displayed as radio buttons with a label
++## followed by a description.
++
++firefox-suggest-onboarding-main-title = We’re building a richer search experience
++firefox-suggest-onboarding-main-description = Finding the best of the web should be easier. Allowing { -vendor-short-name } to process your search queries will help develop our { -firefox-suggest-brand-name } feature, while keeping your privacy top of mind.
++firefox-suggest-onboarding-main-accept-option-label =
++    Allow improved search experience. <a data-l10n-name="firefox-suggest-onboarding-learn-more-link">Learn more</a>
++firefox-suggest-onboarding-main-accept-option-description = Include suggestions for a more curated web experience.
++firefox-suggest-onboarding-main-reject-option-label = Keep my default experience.
++firefox-suggest-onboarding-main-reject-option-description = Don’t allow search query processing.
+ firefox-suggest-onboarding-main-submit-button = Save preferences
+-firefox-suggest-onboarding-main-skip-link = Not now
++firefox-suggest-onboarding-main-skip-link = Skip action
+diff --git b/browser/components/urlbar/content/quicksuggestOnboarding.css a/browser/components/urlbar/content/quicksuggestOnboarding.css
+index 5eb923f64f5d..f48712037970 100644
+--- b/browser/components/urlbar/content/quicksuggestOnboarding.css
++++ a/browser/components/urlbar/content/quicksuggestOnboarding.css
+@@ -8,42 +8,29 @@
+  */
+ 
+ :root {
+-  --introduction-magglass-logo-width: 176px;
+-  --introduction-magglass-logo-height: 128px;
+-  --introduction-firefox-logo-width: 72px;
+-  --introduction-firefox-logo-height: 72px;
+-  --main-magglass-logo-width: 88px;
+-  --main-magglass-logo-height: 64px;
+-  --main-firefox-logo-width: 50px;
+-  --main-firefox-logo-height: 50px;
+-  --x-large-margin: 40px;
++  /* As this dialog is designed under assuming the base font size is 11px,
++     specify image size using current font-size. */
++  --introduction-logo-width: calc(158 / 11 * 1em);
++  --introduction-logo-height: calc(114 / 11 * 1em);
++  --main-logo-width: calc(100 / 11 * 1em);
++  --main-logo-height: calc(64 / 11 * 1em);
++  /* --fixed-large-margin is constant regardless of compact mode. */
++  --fixed-large-margin: 24px;
+   --large-margin: 24px;
+-  --large-margin-const: 24px;
+   --small-margin: 16px;
+-  --small-margin-const: 16px;
+-  --x-small-margin-const: 8px;
+   --section-vertical-padding: 32px;
+   --section-horizontal-padding: 64px;
+ }
+ 
+ body.compact {
+-  --main-magglass-logo-width: 66px;
+-  --main-magglass-logo-height: 48px;
+-  --main-firefox-logo-width: 32px;
+-  --main-firefox-logo-height: 32px;
+-  --x-large-margin: 20px;
++  /* 15px is the usual font-size. */
++  font-size: 13px;
++  --main-logo-width: calc(100 / 13 * 1em);
++  --main-logo-height: calc(64 / 13 * 1em);
+   --large-margin: 12px;
+   --small-margin: 8px;
+   --section-vertical-padding: 16px;
+   --section-horizontal-padding: 32px;
+-
+-  /* 15px is the non-compact font-size. */
+-  font-size: 13px;
+-}
+-
+-body,
+-section {
+-  width: 536px;
+ }
+ 
+ section {
+@@ -53,30 +40,20 @@ section {
+   flex-direction: column;
+   text-align: center;
+   padding: var(--section-vertical-padding) var(--section-horizontal-padding);
+-  /* This is the largest approximate natural height of the main section across
+-     platforms and dialog variations, erring on the side of being slightly
+-     larger than necessary. If you change this, also update COMPACT_MODE_HEIGHT
+-     in the JS. */
+-  min-height: 650px;
++  width: 536px;
++  /* This is the natural height of the main section. */
++  min-height: 587px;
+ }
+ 
+ body.compact section {
+-  /* This is the largest approximate natural height of the main section across
+-     platforms and dialog variations in compact mode, erring on the side of
+-     being slightly larger than necessary. */
+-  min-height: 510px;
+-}
+-
+-a {
+-  cursor: pointer;
+-  font-weight: normal;
++  /* This is the natural height of the main section in compact mode. */
++  min-height: 450px;
+ }
+ 
+ .title {
+   font-size: 1.6em;
+   font-weight: 600;
+   line-height: 1.5;
+-  white-space: pre-line;
+ }
+ 
+ .logo {
+@@ -100,95 +77,42 @@ a {
+ }
+ 
+ #introduction-section .logo {
+-  background-image: url("quicksuggestOnboarding_magglass.svg");
+-  width: var(--introduction-magglass-logo-width);
+-  height: var(--introduction-magglass-logo-height);
++  background-image: url("quicksuggestOnboarding_magglass_animation.svg");
++  width: var(--introduction-logo-width);
++  height: var(--introduction-logo-height);
+   margin-block-end: var(--large-margin);
+ }
+ 
+-#introduction-section .logo.firefox {
+-  background-image: url("chrome://branding/content/about-logo.svg");
+-  width: var(--introduction-firefox-logo-width);
+-  height: var(--introduction-firefox-logo-height);
+-}
+-
+-@media (prefers-reduced-motion: no-preference) {
++@media (prefers-reduced-motion: reduce) {
+   #introduction-section .logo {
+-    background-image: url("quicksuggestOnboarding_magglass_animation.svg");
++    background-image: url("quicksuggestOnboarding_magglass.svg");
+   }
+ }
+ 
+ #introduction-section .title {
+-  margin-block-end: var(--x-large-margin);
+-}
+-
+-#onboardingClose {
+-  position: absolute;
+-  top: 0;
+-  inset-inline-end: 0;
+-  margin: 16px;
+-  padding: 0;
+-  line-height: 0;
+-  min-width: 20px;
+-  min-height: 20px;
+-}
+-
+-#onboardingClose:not(.active) {
+-  display: none;
+-}
+-
+-#onboardingClose img {
+-  -moz-context-properties: fill;
+-  fill: currentColor;
++  margin-block-end: var(--large-margin);
+ }
+ 
+ #main-section {
+-  display: flex;
+-}
+-
+-#main-section:not(.active) {
+   display: none;
+ }
+ 
+ #main-section .logo {
+   background-image: url("quicksuggestOnboarding_magglass.svg");
+-  width: var(--main-magglass-logo-width);
+-  height: var(--main-magglass-logo-height);
++  width: var(--main-logo-width);
++  height: var(--main-logo-height);
+   margin-block-end: var(--large-margin);
+ }
+ 
+-#main-section .logo.firefox {
+-  background-image: url("chrome://branding/content/about-logo.svg");
+-  width: var(--main-firefox-logo-width);
+-  height: var(--main-firefox-logo-height);
+-}
+-
+ #main-section .title {
+-  margin-block: 0 var(--small-margin);
+-}
+-
+-#main-section .description-section {
+-  /* The effective visual margin between the description and first option should
+-      be --large-margin-const. Each child in the description has a bottom margin
+-      of --small-margin, so subtract it from --large-margin-const. */
+-  margin-block: 0 calc(var(--large-margin-const) - var(--small-margin));
++  margin-block-end: var(--large-margin);
+ }
+ 
+ #main-section .description {
++  margin-block: 0 var(--fixed-large-margin);
+   font-size: 1.1em;
+   font-weight: 400;
+   line-height: 1.6;
+-  margin-block: 0 var(--small-margin);
+-}
+-
+-#main-section .privacy-first {
+-  font-size: 1.1em;
+-  font-weight: 700;
+-  margin-block: 0 var(--small-margin);
+-}
+-
+-#main-section .privacy-first:not(.active) {
+-  display: none;
+ }
+ 
+ #main-section .option {
+@@ -196,13 +120,8 @@ a {
+   border: 2px solid var(--in-content-box-info-background);
+   display: flex;
+   text-align: start;
+-  /* Use --small-margin-const for the horizontal padding to make the option's
+-     horizontal padding larger than the vertical padding in compact mode. The
+-     radio button and text are too close to the left and right edges of the
+-     option's border otherwise. */
+-  padding: var(--small-margin) var(--small-margin-const);
+-  width: 100% - calc(2 * var(--section-horizontal-padding));
+-  box-sizing: border-box;
++  padding: var(--small-margin);
++  width: calc(100% - (var(--small-margin) + 2px) * 2);
+   flex-direction: row;
+   position: relative;
+ }
+@@ -216,7 +135,7 @@ a {
+ }
+ 
+ #main-section .option.reject {
+-  margin-block-end: var(--large-margin-const);
++  margin-block-end: var(--fixed-large-margin);
+ }
+ 
+ #main-section .option > label {
+@@ -257,12 +176,14 @@ body:not(.compact) #main-section .option > input {
+   font-size: 1em;
+ }
+ 
+-button {
+-  margin-block-end: var(--large-margin);
++#main-section a {
++  cursor: pointer;
++  font-weight: normal;
+ }
+ 
+-#onboardingSkipLink {
+-  margin-block-end: var(--x-small-margin-const);
++button,
++#onboardingNotNow {
++  margin-block-end: var(--small-margin);
+ }
+ 
+ /* transition from introduction to main */
+@@ -274,6 +195,7 @@ button {
+ }
+ 
+ #main-section.active {
++  display: flex;
+   animation: fadein 0.3s forwards;
+ }
+ 
+diff --git b/browser/components/urlbar/content/quicksuggestOnboarding.html a/browser/components/urlbar/content/quicksuggestOnboarding.html
+index 5e30e2891fe0..615e1261036a 100644
+--- b/browser/components/urlbar/content/quicksuggestOnboarding.html
++++ a/browser/components/urlbar/content/quicksuggestOnboarding.html
+@@ -21,21 +21,15 @@
+   <body role="dialog"
+         aria-labelledby="introduction-title">
+     <section id="introduction-section">
+-      <button id="onboardingClose"
+-              tabindex="2"
+-              class="ghost-button">
+-        <img src="chrome://global/skin/icons/close.svg" />
+-      </button>
+       <span class="logo" role="presentation"></span>
+       <h1 id="introduction-title"
+           class="title"
+           aria-live="polite"
+-          data-l10n-id="firefox-suggest-onboarding-introduction-title-1"></h1>
++          data-l10n-id="firefox-suggest-onboarding-introduction-title"></h1>
+       <button id="onboardingNext"
+               class="primary"
+               tabindex="1"
+-              data-l10n-id="firefox-suggest-onboarding-introduction-next-button-1">
+-      </button>
++              data-l10n-id="firefox-suggest-onboarding-introduction-button"></button>
+       <div class="pager">
+         <span class="current"></span>
+         <span></span>
+@@ -43,35 +37,27 @@
+     </section>
+     <section id="main-section">
+       <span class="logo" role="presentation"></span>
+-      <h1 id="main-title"
+-          class="title"
++      <h1 class="title"
+           aria-live="polite"
+-          data-l10n-id="firefox-suggest-onboarding-main-title-1"></h1>
+-      <div class="description-section">
+-        <h2 id="main-description"
+-            class="description"
+-            tabindex="-1"
+-            data-l10n-id="firefox-suggest-onboarding-main-description-1"></h2>
+-        <h3 class="privacy-first"
+-            tabindex="-1"
+-            data-l10n-id="firefox-suggest-onboarding-main-privacy-first"></h2>
+-      </div>
++          data-l10n-id="firefox-suggest-onboarding-main-title"></h1>
++      <h2 class="description"
++           tabindex="-1"
++           data-l10n-id="firefox-suggest-onboarding-main-description"></h2>
+       <div class="option accept">
+         <label for="onboardingAccept"></label>
+         <input id="onboardingAccept"
+                type="radio"
+-               tabindex="3"
++               tabindex="2"
+                name="search-experience"></input>
+         <div>
+           <div class="option-label"
+                data-l10n-id="firefox-suggest-onboarding-main-accept-option-label">
+             <a id="onboardingLearnMore"
+-               tabindex="4"
+-               data-l10n-name="learn-more-link"></a>
++               tabindex="3"
++               data-l10n-name="firefox-suggest-onboarding-learn-more-link"></a>
+           </div>
+-          <div id="main-accept-option-description"
+-               class="option-description"
+-               data-l10n-id="firefox-suggest-onboarding-main-accept-option-description-1">
++          <div class="option-description"
++               data-l10n-id="firefox-suggest-onboarding-main-accept-option-description">
+           </div>
+         </div>
+       </div>
+@@ -79,25 +65,24 @@
+         <label for="onboardingReject"></label>
+         <input id="onboardingReject"
+                type="radio"
+-               tabindex="5"
++               tabindex="4"
+                name="search-experience"></input>
+         <div>
+           <div class="option-label"
+                data-l10n-id="firefox-suggest-onboarding-main-reject-option-label">
+           </div>
+-          <div id="main-reject-option-description"
+-               class="option-description"
+-               data-l10n-id="firefox-suggest-onboarding-main-reject-option-description-1">
++          <div class="option-description"
++               data-l10n-id="firefox-suggest-onboarding-main-reject-option-description">
+           </div>
+         </div>
+       </div>
+       <button id="onboardingSubmit"
+               class="primary"
+               disabled="true"
+-              tabindex="6"
++              tabindex="5"
+               data-l10n-id="firefox-suggest-onboarding-main-submit-button"></button>
+-      <a id="onboardingSkipLink"
+-         tabindex="7"
++      <a id="onboardingNotNow"
++         tabindex="6"
+          data-l10n-id="firefox-suggest-onboarding-main-skip-link"></a>
+       <div class="pager">
+         <span></span>
+diff --git b/browser/components/urlbar/content/quicksuggestOnboarding.js a/browser/components/urlbar/content/quicksuggestOnboarding.js
+index 2e5d9973910f..7c240e69bd84 100644
+--- b/browser/components/urlbar/content/quicksuggestOnboarding.js
++++ a/browser/components/urlbar/content/quicksuggestOnboarding.js
+@@ -8,142 +8,13 @@ const { ONBOARDING_CHOICE } = ChromeUtils.import(
+   "resource:///modules/UrlbarQuickSuggest.jsm"
+ );
+ 
+-const VARIATION_MAP = {
+-  a: {
+-    l10nUpdates: {
+-      onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+-      "introduction-title": "firefox-suggest-onboarding-introduction-title-1",
+-      "main-title": "firefox-suggest-onboarding-main-title-1",
+-      "main-description": "firefox-suggest-onboarding-main-description-1",
+-      "main-accept-option-description":
+-        "firefox-suggest-onboarding-main-accept-option-description-1",
+-      "main-reject-option-description":
+-        "firefox-suggest-onboarding-main-reject-option-description-1",
+-    },
+-  },
+-  b: {
+-    introductionCloseButton: true,
+-    l10nUpdates: {
+-      onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+-      "introduction-title": "firefox-suggest-onboarding-introduction-title-2",
+-      "main-title": "firefox-suggest-onboarding-main-title-2",
+-      "main-description": "firefox-suggest-onboarding-main-description-2",
+-      "main-accept-option-description":
+-        "firefox-suggest-onboarding-main-accept-option-description-1",
+-      "main-reject-option-description":
+-        "firefox-suggest-onboarding-main-reject-option-description-1",
+-    },
+-  },
+-  c: {
+-    logoType: "firefox",
+-    l10nUpdates: {
+-      onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+-      "introduction-title": "firefox-suggest-onboarding-introduction-title-3",
+-      "main-title": "firefox-suggest-onboarding-main-title-3",
+-      "main-description": "firefox-suggest-onboarding-main-description-3",
+-      "main-accept-option-description":
+-        "firefox-suggest-onboarding-main-accept-option-description-1",
+-      "main-reject-option-description":
+-        "firefox-suggest-onboarding-main-reject-option-description-1",
+-    },
+-  },
+-  d: {
+-    introductionCloseButton: true,
+-    l10nUpdates: {
+-      onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+-      "introduction-title": "firefox-suggest-onboarding-introduction-title-4",
+-      "main-title": "firefox-suggest-onboarding-main-title-4",
+-      "main-description": "firefox-suggest-onboarding-main-description-4",
+-      "main-accept-option-description":
+-        "firefox-suggest-onboarding-main-accept-option-description-2",
+-      "main-reject-option-description":
+-        "firefox-suggest-onboarding-main-reject-option-description-2",
+-    },
+-  },
+-  e: {
+-    logoType: "firefox",
+-    introductionCloseButton: true,
+-    l10nUpdates: {
+-      onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+-      "introduction-title": "firefox-suggest-onboarding-introduction-title-5",
+-      "main-title": "firefox-suggest-onboarding-main-title-5",
+-      "main-description": "firefox-suggest-onboarding-main-description-5",
+-      "main-accept-option-description":
+-        "firefox-suggest-onboarding-main-accept-option-description-2",
+-      "main-reject-option-description":
+-        "firefox-suggest-onboarding-main-reject-option-description-2",
+-    },
+-  },
+-  f: {
+-    introductionCloseButton: true,
+-    l10nUpdates: {
+-      onboardingNext: "firefox-suggest-onboarding-introduction-next-button-2",
+-      "introduction-title": "firefox-suggest-onboarding-introduction-title-6",
+-      "main-title": "firefox-suggest-onboarding-main-title-6",
+-      "main-description": "firefox-suggest-onboarding-main-description-6",
+-      "main-accept-option-description":
+-        "firefox-suggest-onboarding-main-accept-option-description-2",
+-      "main-reject-option-description":
+-        "firefox-suggest-onboarding-main-reject-option-description-2",
+-    },
+-  },
+-  g: {
+-    mainPrivacyFirst: true,
+-    l10nUpdates: {
+-      onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+-      "introduction-title": "firefox-suggest-onboarding-introduction-title-7",
+-      "main-title": "firefox-suggest-onboarding-main-title-7",
+-      "main-description": "firefox-suggest-onboarding-main-description-7",
+-      "main-accept-option-description":
+-        "firefox-suggest-onboarding-main-accept-option-description-2",
+-      "main-reject-option-description":
+-        "firefox-suggest-onboarding-main-reject-option-description-2",
+-    },
+-  },
+-  h: {
+-    logoType: "firefox",
+-    l10nUpdates: {
+-      onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+-      "introduction-title": "firefox-suggest-onboarding-introduction-title-2",
+-      "main-title": "firefox-suggest-onboarding-main-title-8",
+-      "main-description": "firefox-suggest-onboarding-main-description-8",
+-      "main-accept-option-description":
+-        "firefox-suggest-onboarding-main-accept-option-description-1",
+-      "main-reject-option-description":
+-        "firefox-suggest-onboarding-main-reject-option-description-1",
+-    },
+-  },
+-};
+-
+-// If the window height is smaller than this value when the dialog opens, then
+-// the dialog will open in compact mode. The dialog will not change modes while
+-// it's open even if the window height changes.
+-const COMPACT_MODE_HEIGHT =
+-  650 + // section min-height (non-compact mode)
+-  2 * 32 + // 2 * --section-vertical-padding (non-compact mode)
+-  44; // approximate height of the browser window's tab bar
+-
+-// Used for test only. If links or buttons may be clicked or typed Key_Enter
+-// while translating l10n, cannot capture the events since not register listeners
+-// yet. To avoid the issue, add this flag to know the listeners are ready.
+-let resolveOnboardingReady;
+-window._quicksuggestOnboardingReady = new Promise(r => {
+-  resolveOnboardingReady = r;
+-});
+-
+-document.addEventListener("DOMContentLoaded", async () => {
+-  await document.l10n.ready;
+-
+-  const variation = VARIATION_MAP[window.arguments[0].variationType];
+-  if (variation) {
+-    document.l10n.pauseObserving();
+-    try {
+-      await applyVariation(variation);
+-    } finally {
+-      document.l10n.resumeObserving();
+-    }
+-  }
++// Number of height pixels to switch to compact mode to avoid showing scrollbars
++// on the non-compact mode. This is based on the natural height of the full-size
++// section height 587px + padding-block-start 32px + padding-block-end 32px +
++// the approximate height of the tab bar 44px.
++const COMPACT_MODE_HEIGHT = 587 + 32 * 2 + 44;
+ 
++document.addEventListener("DOMContentLoaded", () => {
+   addSubmitListener(document.getElementById("onboardingNext"), () => {
+     document.getElementById("introduction-section").classList.add("inactive");
+     document.getElementById("main-section").classList.add("active");
+@@ -152,7 +23,7 @@ document.addEventListener("DOMContentLoaded", async () => {
+     window.arguments[0].choice = ONBOARDING_CHOICE.LEARN_MORE;
+     window.close();
+   });
+-  addSubmitListener(document.getElementById("onboardingSkipLink"), () => {
++  addSubmitListener(document.getElementById("onboardingNotNow"), () => {
+     window.arguments[0].choice = ONBOARDING_CHOICE.NOT_NOW;
+     window.close();
+   });
+@@ -197,47 +68,9 @@ document.addEventListener("DOMContentLoaded", async () => {
+   if (window.outerHeight < COMPACT_MODE_HEIGHT) {
+     document.body.classList.add("compact");
+   }
+-
+-  resolveOnboardingReady();
+ });
+ 
+-async function applyVariation(variation) {
+-  if (variation.introductionCloseButton) {
+-    const onboardingClose = document.getElementById("onboardingClose");
+-    onboardingClose.classList.add("active");
+-    addSubmitListener(onboardingClose, () => {
+-      window.arguments[0].choice = ONBOARDING_CHOICE.NOT_NOW;
+-      window.close();
+-    });
+-  }
+-
+-  if (variation.logoType) {
+-    for (const logo of document.querySelectorAll(".logo")) {
+-      logo.classList.add(variation.logoType);
+-    }
+-  }
+-
+-  if (variation.mainPrivacyFirst) {
+-    const label = document.querySelector("#main-section .privacy-first");
+-    label.classList.add("active");
+-  }
+-
+-  if (variation.l10nUpdates) {
+-    const translatedElements = [];
+-    for (const [id, newL10N] of Object.entries(variation.l10nUpdates)) {
+-      const element = document.getElementById(id);
+-      document.l10n.setAttributes(element, newL10N);
+-      translatedElements.push(element);
+-    }
+-    await document.l10n.translateElements(translatedElements);
+-  }
+-}
+-
+ function addSubmitListener(element, listener) {
+-  if (!element) {
+-    console.warn("Element is null on addSubmitListener");
+-    return;
+-  }
+   element.addEventListener("click", listener);
+   element.addEventListener("keydown", e => {
+     if (e.keyCode == e.DOM_VK_RETURN) {
+diff --git b/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_configuration.js a/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_configuration.js
+index 6cdc90c724c4..40f42748d8b5 100644
+--- b/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_configuration.js
++++ a/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_configuration.js
+@@ -24,6 +24,90 @@ add_task(async function init() {
+   await QuickSuggestTestUtils.ensureQuickSuggestInit();
+ });
+ 
++// The default is to wait for no browser restarts to show the onboarding dialog
++// on the first restart. This tests that we can override it by configuring the
++// `showOnboardingDialogOnNthRestart`
++add_task(async function test_override_wait_after_n_restarts() {
++  // Set up non-Nimbus prefs related to showing the onboarding.
++  await SpecialPowers.pushPrefEnv({
++    set: [
++      ["browser.urlbar.quicksuggest.showedOnboardingDialog", false],
++      ["browser.urlbar.quicksuggest.seenRestarts", 0],
++    ],
++  });
++
++  await QuickSuggestTestUtils.withExperiment({
++    valueOverrides: {
++      quickSuggestScenario: "online",
++      // Wait for 1 browser restart
++      quickSuggestShowOnboardingDialogAfterNRestarts: 1,
++    },
++    callback: async () => {
++      let prefPromise = TestUtils.waitForPrefChange(
++        "browser.urlbar.quicksuggest.showedOnboardingDialog",
++        value => value === true
++      ).then(() => info("Saw pref change"));
++
++      // Simulate 2 restarts. this function is only called by BrowserGlue
++      // on startup, the first restart would be where MR1 was shown then
++      // we will show onboarding the 2nd restart after that.
++      info("Simulating first restart");
++      await UrlbarQuickSuggest.maybeShowOnboardingDialog();
++
++      info("Simulating second restart");
++      const dialogPromise = BrowserTestUtils.promiseAlertDialogOpen(
++        null,
++        ONBOARDING_URI,
++        { isSubDialog: true }
++      );
++      const maybeShowPromise = UrlbarQuickSuggest.maybeShowOnboardingDialog();
++      const win = await dialogPromise;
++      if (win.document.readyState != "complete") {
++        await BrowserTestUtils.waitForEvent(win, "load");
++      }
++      // Close dialog.
++      EventUtils.synthesizeKey("KEY_Escape");
++
++      info("Waiting for maybeShowPromise and pref change");
++      await Promise.all([maybeShowPromise, prefPromise]);
++    },
++  });
++
++  await SpecialPowers.popPrefEnv();
++  clearOnboardingPrefs();
++});
++
++add_task(async function test_skip_onboarding_dialog() {
++  // Set up non-Nimbus prefs related to showing the onboarding.
++  await SpecialPowers.pushPrefEnv({
++    set: [
++      ["browser.urlbar.quicksuggest.showedOnboardingDialog", false],
++      ["browser.urlbar.quicksuggest.seenRestarts", 0],
++    ],
++  });
++  await QuickSuggestTestUtils.withExperiment({
++    valueOverrides: {
++      quickSuggestScenario: "online",
++      quickSuggestShouldShowOnboardingDialog: false,
++    },
++    callback: async () => {
++      // Simulate 3 restarts.
++      for (let i = 0; i < 3; i++) {
++        info(`Simulating restart ${i + 1}`);
++        await UrlbarQuickSuggest.maybeShowOnboardingDialog();
++      }
++      Assert.ok(
++        !Services.prefs.getBoolPref(
++          "browser.urlbar.quicksuggest.showedOnboardingDialog"
++        ),
++        "The showed onboarding dialog pref should not be set"
++      );
++    },
++  });
++  await SpecialPowers.popPrefEnv();
++  clearOnboardingPrefs();
++});
++
+ add_task(async function test_indexes() {
+   await QuickSuggestTestUtils.withExperiment({
+     valueOverrides: {
+diff --git b/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js a/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js
+index 7f6ef584bebe..41294d83042c 100644
+--- b/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js
++++ a/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js
+@@ -29,13 +29,6 @@ if (AppConstants.platform == "macosx") {
+   requestLongerTimeout(3);
+ }
+ 
+-// Whether the tab key can move the focus. On macOS with full keyboard access
+-// disabled (which is default), this will be false. See `canTabMoveFocus`.
+-let gCanTabMoveFocus;
+-add_task(async function setup() {
+-  gCanTabMoveFocus = await canTabMoveFocus();
+-});
+-
+ // When the user has already enabled the data-collection pref, the dialog should
+ // not appear.
+ add_task(async function onboardingShouldNotAppear() {
+@@ -169,7 +162,7 @@ add_task(async function reject() {
+ });
+ 
+ // When the Not Now link is clicked, the user should remain opted out.
+-add_task(async function skip() {
++add_task(async function notNow() {
+   await doDialogTest({
+     callback: async () => {
+       let tabCount = gBrowser.tabs.length;
+@@ -180,7 +173,7 @@ add_task(async function skip() {
+       });
+ 
+       info("Click on not now link");
+-      win.document.getElementById("onboardingSkipLink").click();
++      win.document.getElementById("onboardingNotNow").click();
+ 
+       info("Waiting for maybeShowOnboardingDialog to finish");
+       await maybeShowPromise;
+@@ -443,13 +436,8 @@ add_task(async function dismissed_other_on_introduction() {
+   });
+ });
+ 
+-// Tests tabbing through the dialog on main section.
+-add_task(async function focus_order_on_main() {
+-  if (!gCanTabMoveFocus) {
+-    Assert.ok(true, "Tab key can't move focus, skipping test");
+-    return;
+-  }
+-
++// Tests tabbing through the dialog at initial.
++add_task(async function focus_init_order() {
+   setDialogPrereqPrefs();
+ 
+   info("Calling showOnboardingDialog");
+@@ -461,7 +449,7 @@ add_task(async function focus_order_on_main() {
+     "onboardingAccept",
+     "onboardingLearnMore",
+     "onboardingReject",
+-    "onboardingSkipLink",
++    "onboardingNotNow",
+     "onboardingAccept",
+   ];
+ 
+@@ -478,11 +466,6 @@ add_task(async function focus_order_on_main() {
+ 
+ // Tests tabbing through the dialog after selecting accept option.
+ add_task(async function focus_order_with_accept_option() {
+-  if (!gCanTabMoveFocus) {
+-    Assert.ok(true, "Tab key can't move focus, skipping test");
+-    return;
+-  }
+-
+   setDialogPrereqPrefs();
+ 
+   info("Calling showOnboardingDialog");
+@@ -498,7 +481,7 @@ add_task(async function focus_order_with_accept_option() {
+   const order = [
+     "onboardingLearnMore",
+     "onboardingSubmit",
+-    "onboardingSkipLink",
++    "onboardingNotNow",
+     "onboardingAccept",
+   ];
+ 
+@@ -515,11 +498,6 @@ add_task(async function focus_order_with_accept_option() {
+ 
+ // Tests tabbing through the dialog after selecting reject option.
+ add_task(async function focus_order_with_reject_option() {
+-  if (!gCanTabMoveFocus) {
+-    Assert.ok(true, "Tab key can't move focus, skipping test");
+-    return;
+-  }
+-
+   setDialogPrereqPrefs();
+ 
+   info("Calling showOnboardingDialog");
+@@ -534,7 +512,7 @@ add_task(async function focus_order_with_reject_option() {
+ 
+   const order = [
+     "onboardingSubmit",
+-    "onboardingSkipLink",
++    "onboardingNotNow",
+     "onboardingLearnMore",
+     "onboardingReject",
+   ];
+@@ -666,11 +644,11 @@ add_task(async function focus_reject() {
+ 
+ // Tests tabbing through the dialog and pressing enter. (no option)
+ // Tab key count: 4
+-// Expected focused element: skip link
+-add_task(async function focus_skip() {
++// Expected focused element: not now link
++add_task(async function focus_notNow() {
+   await doFocusTest({
+     tabKeyRepeat: 4,
+-    expectedFocusID: "onboardingSkipLink",
++    expectedFocusID: "onboardingNotNow",
+     callback: async () => {
+       let tabCount = gBrowser.tabs.length;
+       EventUtils.synthesizeKey("KEY_Enter");
+@@ -730,281 +708,6 @@ add_task(async function focus_accept_wraparound() {
+   });
+ });
+ 
+-// The default is to wait for no browser restarts to show the onboarding dialog
+-// on the first restart. This tests that we can override it by configuring the
+-// `showOnboardingDialogOnNthRestart`
+-add_task(async function nimbus_override_wait_after_n_restarts() {
+-  UrlbarPrefs.clear("quicksuggest.shouldShowOnboardingDialog");
+-  UrlbarPrefs.clear("quicksuggest.showedOnboardingDialog");
+-  UrlbarPrefs.clear("quicksuggest.seenRestarts", 0);
+-
+-  await QuickSuggestTestUtils.withExperiment({
+-    valueOverrides: {
+-      quickSuggestScenario: "online",
+-      // Wait for 1 browser restart
+-      quickSuggestShowOnboardingDialogAfterNRestarts: 1,
+-    },
+-    callback: async () => {
+-      let prefPromise = TestUtils.waitForPrefChange(
+-        "browser.urlbar.quicksuggest.showedOnboardingDialog",
+-        value => value === true
+-      ).then(() => info("Saw pref change"));
+-
+-      // Simulate 2 restarts. this function is only called by BrowserGlue
+-      // on startup, the first restart would be where MR1 was shown then
+-      // we will show onboarding the 2nd restart after that.
+-      info("Simulating first restart");
+-      await UrlbarQuickSuggest.maybeShowOnboardingDialog();
+-
+-      info("Simulating second restart");
+-      const dialogPromise = BrowserTestUtils.promiseAlertDialogOpen(
+-        null,
+-        ONBOARDING_URI,
+-        { isSubDialog: true }
+-      );
+-      const maybeShowPromise = UrlbarQuickSuggest.maybeShowOnboardingDialog();
+-      const win = await dialogPromise;
+-      if (win.document.readyState != "complete") {
+-        await BrowserTestUtils.waitForEvent(win, "load");
+-      }
+-      // Close dialog.
+-      EventUtils.synthesizeKey("KEY_Escape");
+-
+-      info("Waiting for maybeShowPromise and pref change");
+-      await Promise.all([maybeShowPromise, prefPromise]);
+-    },
+-  });
+-});
+-
+-add_task(async function nimbus_skip_onboarding_dialog() {
+-  UrlbarPrefs.clear("quicksuggest.shouldShowOnboardingDialog");
+-  UrlbarPrefs.clear("quicksuggest.showedOnboardingDialog");
+-  UrlbarPrefs.clear("quicksuggest.seenRestarts", 0);
+-
+-  await QuickSuggestTestUtils.withExperiment({
+-    valueOverrides: {
+-      quickSuggestScenario: "online",
+-      quickSuggestShouldShowOnboardingDialog: false,
+-    },
+-    callback: async () => {
+-      // Simulate 3 restarts.
+-      for (let i = 0; i < 3; i++) {
+-        info(`Simulating restart ${i + 1}`);
+-        await UrlbarQuickSuggest.maybeShowOnboardingDialog();
+-      }
+-      Assert.ok(
+-        !Services.prefs.getBoolPref(
+-          "browser.urlbar.quicksuggest.showedOnboardingDialog",
+-          false
+-        ),
+-        "The showed onboarding dialog pref should not be set"
+-      );
+-    },
+-  });
+-});
+-
+-// Test the close button on the introduction pane appeared by Nimbus setting.
+-// Then when the close button is clicked, the user should remain opted out.
+-add_task(async function close_button_on_introduction_pane() {
+-  await QuickSuggestTestUtils.withExperiment({
+-    valueOverrides: {
+-      quickSuggestOnboardingDialogVariation: "B",
+-    },
+-    callback: async () => {
+-      await doDialogTest({
+-        callback: async () => {
+-          info("Calling showOnboardingDialog");
+-          const { win, maybeShowPromise } = await showOnboardingDialog();
+-
+-          info("Check the visibility of the close button");
+-          const closeButton = win.document.getElementById("onboardingClose");
+-          Assert.ok(BrowserTestUtils.is_visible(closeButton));
+-
+-          info("Click on the close button");
+-          closeButton.click();
+-
+-          info("Waiting for maybeShowOnboardingDialog to finish");
+-          await maybeShowPromise;
+-        },
+-        onboardingDialogChoice: "not_now_link",
+-        expectedUserBranchPrefs: {
+-          "quicksuggest.dataCollection.enabled": false,
+-        },
+-        telemetryEvents: [
+-          {
+-            category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+-            method: "data_collect_toggled",
+-            object: "disabled",
+-          },
+-          {
+-            category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+-            method: "opt_in_dialog",
+-            object: "not_now_link",
+-          },
+-        ],
+-      });
+-    },
+-  });
+-});
+-
+-// Test the UI variation A.
+-add_task(async function variation_A() {
+-  await doVariationTest({
+-    variation: "A",
+-    expectedL10N: {
+-      onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+-      "introduction-title": "firefox-suggest-onboarding-introduction-title-1",
+-      "main-title": "firefox-suggest-onboarding-main-title-1",
+-      "main-description": "firefox-suggest-onboarding-main-description-1",
+-      "main-accept-option-description":
+-        "firefox-suggest-onboarding-main-accept-option-description-1",
+-      "main-reject-option-description":
+-        "firefox-suggest-onboarding-main-reject-option-description-1",
+-    },
+-  });
+-});
+-
+-// Test the UI variation B.
+-add_task(async function variation_B() {
+-  await doVariationTest({
+-    variation: "B",
+-    expectedUI: {
+-      introductionCloseButton: true,
+-    },
+-    expectedL10N: {
+-      onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+-      "introduction-title": "firefox-suggest-onboarding-introduction-title-2",
+-      "main-title": "firefox-suggest-onboarding-main-title-2",
+-      "main-description": "firefox-suggest-onboarding-main-description-2",
+-      "main-accept-option-description":
+-        "firefox-suggest-onboarding-main-accept-option-description-1",
+-      "main-reject-option-description":
+-        "firefox-suggest-onboarding-main-reject-option-description-1",
+-    },
+-  });
+-});
+-
+-// Test the UI variation C.
+-add_task(async function variation_C() {
+-  await doVariationTest({
+-    variation: "C",
+-    expectedUI: {
+-      firefoxLogo: true,
+-    },
+-    expectedL10N: {
+-      onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+-      "introduction-title": "firefox-suggest-onboarding-introduction-title-3",
+-      "main-title": "firefox-suggest-onboarding-main-title-3",
+-      "main-description": "firefox-suggest-onboarding-main-description-3",
+-      "main-accept-option-description":
+-        "firefox-suggest-onboarding-main-accept-option-description-1",
+-      "main-reject-option-description":
+-        "firefox-suggest-onboarding-main-reject-option-description-1",
+-    },
+-  });
+-});
+-
+-// Test the UI variation D.
+-add_task(async function variation_D() {
+-  await doVariationTest({
+-    variation: "D",
+-    expectedUI: {
+-      introductionCloseButton: true,
+-    },
+-    expectedL10N: {
+-      onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+-      "introduction-title": "firefox-suggest-onboarding-introduction-title-4",
+-      "main-title": "firefox-suggest-onboarding-main-title-4",
+-      "main-description": "firefox-suggest-onboarding-main-description-4",
+-      "main-accept-option-description":
+-        "firefox-suggest-onboarding-main-accept-option-description-2",
+-      "main-reject-option-description":
+-        "firefox-suggest-onboarding-main-reject-option-description-2",
+-    },
+-  });
+-});
+-
+-// Test the UI variation E.
+-add_task(async function variation_E() {
+-  await doVariationTest({
+-    variation: "E",
+-    expectedUI: {
+-      firefoxLogo: true,
+-      introductionCloseButton: true,
+-    },
+-    expectedL10N: {
+-      onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+-      "introduction-title": "firefox-suggest-onboarding-introduction-title-5",
+-      "main-title": "firefox-suggest-onboarding-main-title-5",
+-      "main-description": "firefox-suggest-onboarding-main-description-5",
+-      "main-accept-option-description":
+-        "firefox-suggest-onboarding-main-accept-option-description-2",
+-      "main-reject-option-description":
+-        "firefox-suggest-onboarding-main-reject-option-description-2",
+-    },
+-  });
+-});
+-
+-// Test the UI variation F.
+-add_task(async function variation_F() {
+-  await doVariationTest({
+-    variation: "F",
+-    expectedUI: {
+-      introductionCloseButton: true,
+-    },
+-    expectedL10N: {
+-      onboardingNext: "firefox-suggest-onboarding-introduction-next-button-2",
+-      "introduction-title": "firefox-suggest-onboarding-introduction-title-6",
+-      "main-title": "firefox-suggest-onboarding-main-title-6",
+-      "main-description": "firefox-suggest-onboarding-main-description-6",
+-      "main-accept-option-description":
+-        "firefox-suggest-onboarding-main-accept-option-description-2",
+-      "main-reject-option-description":
+-        "firefox-suggest-onboarding-main-reject-option-description-2",
+-    },
+-  });
+-});
+-
+-// Test the UI variation G.
+-add_task(async function variation_G() {
+-  await doVariationTest({
+-    variation: "G",
+-    expectedUI: {
+-      mainPrivacyFirst: true,
+-    },
+-    expectedL10N: {
+-      onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+-      "introduction-title": "firefox-suggest-onboarding-introduction-title-7",
+-      "main-title": "firefox-suggest-onboarding-main-title-7",
+-      "main-description": "firefox-suggest-onboarding-main-description-7",
+-      "main-accept-option-description":
+-        "firefox-suggest-onboarding-main-accept-option-description-2",
+-      "main-reject-option-description":
+-        "firefox-suggest-onboarding-main-reject-option-description-2",
+-    },
+-  });
+-});
+-
+-// Test the UI variation H.
+-add_task(async function variation_H() {
+-  await doVariationTest({
+-    variation: "H",
+-    expectedUI: {
+-      firefoxLogo: true,
+-    },
+-    expectedL10N: {
+-      onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+-      "introduction-title": "firefox-suggest-onboarding-introduction-title-2",
+-      "main-title": "firefox-suggest-onboarding-main-title-8",
+-      "main-description": "firefox-suggest-onboarding-main-description-8",
+-      "main-accept-option-description":
+-        "firefox-suggest-onboarding-main-accept-option-description-1",
+-      "main-reject-option-description":
+-        "firefox-suggest-onboarding-main-reject-option-description-1",
+-    },
+-  });
+-});
+-
+ async function doDialogTest({
+   onboardingDialogChoice,
+   telemetryEvents,
+@@ -1097,6 +800,10 @@ async function doDialogTest({
+   }
+ }
+ 
++// Whether the tab key can move the focus. On macOS with full keyboard access
++// disabled (which is default), this will be false. See `canTabMoveFocus`.
++let gCanTabMoveFocus;
++
+ async function doFocusTest({
+   tabKeyRepeat,
+   expectedFocusID,
+@@ -1105,6 +812,9 @@ async function doFocusTest({
+   callback,
+   expectedUserBranchPrefs,
+ }) {
++  if (gCanTabMoveFocus === undefined) {
++    gCanTabMoveFocus = await canTabMoveFocus();
++  }
+   if (!gCanTabMoveFocus && tabKeyRepeat) {
+     Assert.ok(true, "Tab key can't move focus, skipping test");
+     return;
+@@ -1177,94 +887,6 @@ async function doTransitionTest({ trigger }) {
+   await maybeShowPromise;
+ }
+ 
+-async function doVariationTest({
+-  variation,
+-  expectedUI = {},
+-  expectedL10N = {},
+-}) {
+-  UrlbarPrefs.clear("quicksuggest.shouldShowOnboardingDialog");
+-  UrlbarPrefs.clear("quicksuggest.showedOnboardingDialog");
+-  UrlbarPrefs.clear("quicksuggest.seenRestarts", 0);
+-
+-  await QuickSuggestTestUtils.withExperiment({
+-    valueOverrides: {
+-      quickSuggestScenario: "online",
+-      quickSuggestShowOnboardingDialogAfterNRestarts: 0,
+-      quickSuggestOnboardingDialogVariation: variation,
+-    },
+-    callback: async () => {
+-      info("Calling showOnboardingDialog");
+-      const { win, maybeShowPromise } = await showOnboardingDialog();
+-
+-      info("Check the logo");
+-      const introductionLogoImage = win.getComputedStyle(
+-        win.document.querySelector("#introduction-section .logo")
+-      ).backgroundImage;
+-      const mainLogoImage = win.getComputedStyle(
+-        win.document.querySelector("#main-section .logo")
+-      ).backgroundImage;
+-
+-      if (expectedUI.firefoxLogo) {
+-        const logoImage = 'url("chrome://branding/content/about-logo.svg")';
+-        Assert.equal(introductionLogoImage, logoImage);
+-        Assert.equal(mainLogoImage, logoImage);
+-      } else {
+-        const logoImage =
+-          'url("chrome://browser/content/urlbar/quicksuggestOnboarding_magglass.svg")';
+-        const animationImage =
+-          'url("chrome://browser/content/urlbar/quicksuggestOnboarding_magglass_animation.svg")';
+-        const mediaQuery = window.matchMedia(
+-          "(prefers-reduced-motion: no-preference)"
+-        );
+-        const expectedIntroductionLogoImage = mediaQuery.matches
+-          ? animationImage
+-          : logoImage;
+-        Assert.equal(introductionLogoImage, expectedIntroductionLogoImage);
+-        Assert.equal(mainLogoImage, logoImage);
+-      }
+-
+-      info("Check the close button on introduction pane");
+-      const onboardingClose = win.document.getElementById("onboardingClose");
+-      if (expectedUI.introductionCloseButton) {
+-        Assert.ok(BrowserTestUtils.is_visible(onboardingClose));
+-      } else {
+-        Assert.ok(BrowserTestUtils.is_hidden(onboardingClose));
+-      }
+-
+-      info("Check the l10n attribute");
+-      for (const [id, l10n] of Object.entries(expectedL10N)) {
+-        const element = win.document.getElementById(id);
+-        Assert.equal(element.getAttribute("data-l10n-id"), l10n);
+-      }
+-
+-      // Trigger the transition by pressing Enter on the Next button.
+-      EventUtils.synthesizeKey("KEY_Enter");
+-      await BrowserTestUtils.waitForCondition(
+-        () =>
+-          BrowserTestUtils.is_hidden(
+-            win.document.getElementById("introduction-section")
+-          ) &&
+-          BrowserTestUtils.is_visible(
+-            win.document.getElementById("main-section")
+-          )
+-      );
+-
+-      info("Check the privacy first message on main pane");
+-      const mainPrivacyFirst = win.document.querySelector(
+-        "#main-section .privacy-first"
+-      );
+-      if (expectedUI.mainPrivacyFirst) {
+-        Assert.ok(BrowserTestUtils.is_visible(mainPrivacyFirst));
+-      } else {
+-        Assert.ok(BrowserTestUtils.is_hidden(mainPrivacyFirst));
+-      }
+-
+-      EventUtils.synthesizeKey("KEY_Escape");
+-      await maybeShowPromise;
+-    },
+-  });
+-}
+-
+ /**
+  * Show onbaording dialog.
+  *
+@@ -1288,9 +910,6 @@ async function showOnboardingDialog({ skipIntroduction } = {}) {
+     await BrowserTestUtils.waitForEvent(win, "load");
+   }
+ 
+-  // Wait until all listers on onboarding dialog are ready.
+-  await window._quicksuggestOnboardingReady;
+-
+   if (!skipIntroduction) {
+     return { win, maybeShowPromise };
+   }
+@@ -1354,11 +973,10 @@ async function canTabMoveFocus() {
+       });
+ 
+       let doc = win.document;
+-      doc.getElementById("onboardingAccept").focus();
++      let { activeElement } = doc;
+       EventUtils.synthesizeKey("KEY_Tab");
+ 
+-      // Whether or not the focus can move to the link.
+-      canMove = doc.activeElement.id === "onboardingLearnMore";
++      canMove = activeElement != doc.activeElement;
+ 
+       EventUtils.synthesizeKey("KEY_Escape");
+       await maybeShowPromise;
+@@ -1380,6 +998,5 @@ async function canTabMoveFocus() {
+       },
+     ],
+   });
+-
+   return canMove;
+ }
+diff --git b/toolkit/components/nimbus/FeatureManifest.yaml a/toolkit/components/nimbus/FeatureManifest.yaml
+index d1b3871f036c..68a7bceb671c 100644
+--- b/toolkit/components/nimbus/FeatureManifest.yaml
++++ a/toolkit/components/nimbus/FeatureManifest.yaml
+@@ -51,10 +51,6 @@ urlbar:
+       description: >-
+         The index of non-sponsored QuickSuggest results within the general
+         group. A negative index is relative to the end of the group
+-    quickSuggestOnboardingDialogVariation:
+-      type: string
+-      description: >-
+-        Specify the messages/UI variation for QuickSuggest onboarding dialog. This should be a single letter from A to H inclusive. This value is case insensitive.
+     quickSuggestRemoteSettingsEnabled:
+       type: boolean
+       fallbackPref: browser.urlbar.quicksuggest.remoteSettings.enabled
+-- 
+2.25.1
+

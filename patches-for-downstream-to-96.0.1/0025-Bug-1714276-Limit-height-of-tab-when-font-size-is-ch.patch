@@ -1,0 +1,44 @@
+From 8faefe680cd30db5c1ea9652d314fff3dda26b15 Mon Sep 17 00:00:00 2001
+From: Bernard Igiri <bigiri@mozilla.com>
+Date: Thu, 6 Jan 2022 16:33:27 +0000
+Subject: [PATCH 25/33] Bug 1714276 - Limit height of tab when font size is
+ changed r=dao,desktop-theme-reviewers, a=dsmith
+
+Set a maximum height on tabs to prevent it from expanding and moving the display of the web page.
+
+Differential Revision: https://phabricator.services.mozilla.com/D134169
+---
+ browser/base/content/tabbrowser-tab.js | 1 -
+ browser/themes/shared/tabs.inc.css     | 4 ----
+ 2 files changed, 5 deletions(-)
+
+diff --git b/browser/base/content/tabbrowser-tab.js a/browser/base/content/tabbrowser-tab.js
+index cee553e9d183..295b9d13c193 100644
+--- b/browser/base/content/tabbrowser-tab.js
++++ a/browser/base/content/tabbrowser-tab.js
+@@ -26,7 +26,6 @@
+                 onoverflow="this.setAttribute('textoverflow', 'true');"
+                 onunderflow="this.removeAttribute('textoverflow');"
+                 align="start"
+-                pack="center"
+                 flex="1">
+             <label class="tab-text tab-label" role="presentation"/>
+             <hbox class="tab-secondary-label">
+diff --git b/browser/themes/shared/tabs.inc.css a/browser/themes/shared/tabs.inc.css
+index 0bc71bcb282e..9fec6af1a718 100644
+--- b/browser/themes/shared/tabs.inc.css
++++ a/browser/themes/shared/tabs.inc.css
+@@ -468,10 +468,6 @@
+   display: none;
+ }
+ 
+-#tabbrowser-tabs:not([secondarytext-unsupported]) .tab-label-container {
+-  height: 2.7em;
+-}
+-
+ .tab-secondary-label {
+   font-size: .75em;
+   opacity: .8;
+-- 
+2.25.1
+

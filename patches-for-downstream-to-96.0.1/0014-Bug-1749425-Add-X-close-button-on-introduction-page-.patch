@@ -1,0 +1,334 @@
+From e0b72b794fc7c01b448c751ba6c605295309f27b Mon Sep 17 00:00:00 2001
+From: Daisuke Akatsuka <daisuke@birchill.co.jp>
+Date: Tue, 11 Jan 2022 02:34:59 +0000
+Subject: [PATCH 14/33] Bug 1749425: Add X close button on introduction page
+ for all UI variations. r=adw, a=RyanVM,dsmith
+
+Differential Revision: https://phabricator.services.mozilla.com/D135573
+---
+ .../urlbar/content/quicksuggestOnboarding.css |   4 +
+ .../urlbar/content/quicksuggestOnboarding.js  |  17 +-
+ .../browser_quicksuggest_onboardingDialog.js  | 159 +++++++-----------
+ 3 files changed, 80 insertions(+), 100 deletions(-)
+
+diff --git b/browser/components/urlbar/content/quicksuggestOnboarding.css a/browser/components/urlbar/content/quicksuggestOnboarding.css
+index 0fbd0963b53f..5eb923f64f5d 100644
+--- b/browser/components/urlbar/content/quicksuggestOnboarding.css
++++ a/browser/components/urlbar/content/quicksuggestOnboarding.css
+@@ -133,6 +133,10 @@ a {
+   min-height: 20px;
+ }
+ 
++#onboardingClose:not(.active) {
++  display: none;
++}
++
+ #onboardingClose img {
+   -moz-context-properties: fill;
+   fill: currentColor;
+diff --git b/browser/components/urlbar/content/quicksuggestOnboarding.js a/browser/components/urlbar/content/quicksuggestOnboarding.js
+index 53829192e1f4..09bc1ef985fa 100644
+--- b/browser/components/urlbar/content/quicksuggestOnboarding.js
++++ a/browser/components/urlbar/content/quicksuggestOnboarding.js
+@@ -22,6 +22,7 @@ const VARIATION_MAP = {
+     },
+   },
+   b: {
++    introductionCloseButton: true,
+     l10nUpdates: {
+       onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+       "introduction-title": "firefox-suggest-onboarding-introduction-title-2",
+@@ -47,6 +48,7 @@ const VARIATION_MAP = {
+     },
+   },
+   d: {
++    introductionCloseButton: true,
+     l10nUpdates: {
+       onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+       "introduction-title": "firefox-suggest-onboarding-introduction-title-4",
+@@ -60,6 +62,7 @@ const VARIATION_MAP = {
+   },
+   e: {
+     logoType: "firefox",
++    introductionCloseButton: true,
+     l10nUpdates: {
+       onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+       "introduction-title": "firefox-suggest-onboarding-introduction-title-5",
+@@ -72,6 +75,7 @@ const VARIATION_MAP = {
+     },
+   },
+   f: {
++    introductionCloseButton: true,
+     l10nUpdates: {
+       onboardingNext: "firefox-suggest-onboarding-introduction-next-button-2",
+       "introduction-title": "firefox-suggest-onboarding-introduction-title-6",
+@@ -140,10 +144,6 @@ document.addEventListener("DOMContentLoaded", async () => {
+     }
+   }
+ 
+-  addSubmitListener(document.getElementById("onboardingClose"), () => {
+-    window.arguments[0].choice = ONBOARDING_CHOICE.CLOSE_1;
+-    window.close();
+-  });
+   addSubmitListener(document.getElementById("onboardingNext"), () => {
+     document.getElementById("introduction-section").classList.add("inactive");
+     document.getElementById("main-section").classList.add("active");
+@@ -203,6 +203,15 @@ document.addEventListener("DOMContentLoaded", async () => {
+ });
+ 
+ async function applyVariation(variation) {
++  if (variation.introductionCloseButton) {
++    const onboardingClose = document.getElementById("onboardingClose");
++    onboardingClose.classList.add("active");
++    addSubmitListener(onboardingClose, () => {
++      window.arguments[0].choice = ONBOARDING_CHOICE.CLOSE_1;
++      window.close();
++    });
++  }
++
+   if (variation.logoType) {
+     for (const logo of document.querySelectorAll(".logo")) {
+       logo.classList.add(variation.logoType);
+diff --git b/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js a/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js
+index 3b9049b96f37..0598a192b4f1 100644
+--- b/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js
++++ a/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js
+@@ -169,42 +169,6 @@ add_task(async function reject() {
+   });
+ });
+ 
+-// When the "X" close button is clicked, the user should remain opted out.
+-add_task(async function close() {
+-  await doDialogTest({
+-    callback: async () => {
+-      info("Calling showOnboardingDialog");
+-      const { win, maybeShowPromise } = await showOnboardingDialog();
+-
+-      info("Check the visibility of the close button");
+-      const closeButton = win.document.getElementById("onboardingClose");
+-      Assert.ok(BrowserTestUtils.is_visible(closeButton));
+-
+-      info("Click on the close button");
+-      closeButton.click();
+-
+-      info("Waiting for maybeShowOnboardingDialog to finish");
+-      await maybeShowPromise;
+-    },
+-    onboardingDialogChoice: "close_1",
+-    expectedUserBranchPrefs: {
+-      "quicksuggest.dataCollection.enabled": false,
+-    },
+-    telemetryEvents: [
+-      {
+-        category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+-        method: "data_collect_toggled",
+-        object: "disabled",
+-      },
+-      {
+-        category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+-        method: "opt_in_dialog",
+-        object: "close_1",
+-      },
+-    ],
+-  });
+-});
+-
+ // When the Not Now link is clicked, the user should remain opted out.
+ add_task(async function skip() {
+   await doDialogTest({
+@@ -481,33 +445,6 @@ add_task(async function dismissed_other_on_introduction() {
+   });
+ });
+ 
+-// Tests tabbing through the dialog on introduction section.
+-add_task(async function focus_order_on_introduction() {
+-  if (!gCanTabMoveFocus) {
+-    Assert.ok(true, "Tab key can't move focus, skipping test");
+-    return;
+-  }
+-
+-  setDialogPrereqPrefs();
+-
+-  info("Calling showOnboardingDialog");
+-  const { win, maybeShowPromise } = await showOnboardingDialog();
+-
+-  info("Check the first focus");
+-  Assert.equal(win.document.activeElement.id, "onboardingNext");
+-
+-  const order = ["onboardingClose", "onboardingNext", "onboardingClose"];
+-  for (const next of order) {
+-    EventUtils.synthesizeKey("KEY_Tab");
+-    Assert.equal(win.document.activeElement.id, next);
+-  }
+-
+-  EventUtils.synthesizeKey("KEY_Escape");
+-
+-  info("Waiting for maybeShowOnboardingDialog to finish");
+-  await maybeShowPromise;
+-});
+-
+ // Tests tabbing through the dialog on main section.
+ add_task(async function focus_order_on_main() {
+   if (!gCanTabMoveFocus) {
+@@ -615,37 +552,6 @@ add_task(async function focus_order_with_reject_option() {
+   await maybeShowPromise;
+ });
+ 
+-// Tests tabbing through the dialog and pressing enter on introduction pane.
+-// Tab key count: 1
+-// Expected focused element: close button
+-add_task(async function focus_close() {
+-  await doFocusTest({
+-    introductionPane: true,
+-    tabKeyRepeat: 1,
+-    expectedFocusID: "onboardingClose",
+-    callback: async () => {
+-      info("Enter to submit");
+-      EventUtils.synthesizeKey("KEY_Enter");
+-    },
+-    onboardingDialogChoice: "close_1",
+-    expectedUserBranchPrefs: {
+-      "quicksuggest.dataCollection.enabled": false,
+-    },
+-    telemetryEvents: [
+-      {
+-        category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+-        method: "data_collect_toggled",
+-        object: "disabled",
+-      },
+-      {
+-        category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+-        method: "opt_in_dialog",
+-        object: "close_1",
+-      },
+-    ],
+-  });
+-});
+-
+ // Tests tabbing through the dialog and pressing enter.
+ // Tab key count: 1
+ // Expected focused element: accept option
+@@ -899,6 +805,50 @@ add_task(async function nimbus_skip_onboarding_dialog() {
+   });
+ });
+ 
++// Test the close button on the introduction pane appeared by Nimbus setting.
++// Then when the close button is clicked, the user should remain opted out.
++add_task(async function close_button_on_introduction_pane() {
++  await QuickSuggestTestUtils.withExperiment({
++    valueOverrides: {
++      quickSuggestOnboardingDialogVariation: "B",
++    },
++    callback: async () => {
++      await doDialogTest({
++        callback: async () => {
++          info("Calling showOnboardingDialog");
++          const { win, maybeShowPromise } = await showOnboardingDialog();
++
++          info("Check the visibility of the close button");
++          const closeButton = win.document.getElementById("onboardingClose");
++          Assert.ok(BrowserTestUtils.is_visible(closeButton));
++
++          info("Click on the close button");
++          closeButton.click();
++
++          info("Waiting for maybeShowOnboardingDialog to finish");
++          await maybeShowPromise;
++        },
++        onboardingDialogChoice: "close_1",
++        expectedUserBranchPrefs: {
++          "quicksuggest.dataCollection.enabled": false,
++        },
++        telemetryEvents: [
++          {
++            category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
++            method: "data_collect_toggled",
++            object: "disabled",
++          },
++          {
++            category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
++            method: "opt_in_dialog",
++            object: "close_1",
++          },
++        ],
++      });
++    },
++  });
++});
++
+ // Test the UI variation A.
+ add_task(async function variation_A() {
+   await doVariationTest({
+@@ -920,6 +870,9 @@ add_task(async function variation_A() {
+ add_task(async function variation_B() {
+   await doVariationTest({
+     variation: "B",
++    expectedUI: {
++      introductionCloseButton: true,
++    },
+     expectedL10N: {
+       onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+       "introduction-title": "firefox-suggest-onboarding-introduction-title-2",
+@@ -957,6 +910,9 @@ add_task(async function variation_C() {
+ add_task(async function variation_D() {
+   await doVariationTest({
+     variation: "D",
++    expectedUI: {
++      introductionCloseButton: true,
++    },
+     expectedL10N: {
+       onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+       "introduction-title": "firefox-suggest-onboarding-introduction-title-4",
+@@ -976,6 +932,7 @@ add_task(async function variation_E() {
+     variation: "E",
+     expectedUI: {
+       firefoxLogo: true,
++      introductionCloseButton: true,
+     },
+     expectedL10N: {
+       onboardingNext: "firefox-suggest-onboarding-introduction-next-button-1",
+@@ -994,6 +951,9 @@ add_task(async function variation_E() {
+ add_task(async function variation_F() {
+   await doVariationTest({
+     variation: "F",
++    expectedUI: {
++      introductionCloseButton: true,
++    },
+     expectedL10N: {
+       onboardingNext: "firefox-suggest-onboarding-introduction-next-button-2",
+       "introduction-title": "firefox-suggest-onboarding-introduction-title-6",
+@@ -1146,7 +1106,6 @@ async function doFocusTest({
+   telemetryEvents,
+   callback,
+   expectedUserBranchPrefs,
+-  introductionPane,
+ }) {
+   if (!gCanTabMoveFocus && tabKeyRepeat) {
+     Assert.ok(true, "Tab key can't move focus, skipping test");
+@@ -1159,7 +1118,7 @@ async function doFocusTest({
+     telemetryEvents,
+     callback: async () => {
+       const { win, maybeShowPromise } = await showOnboardingDialog({
+-        skipIntroduction: !introductionPane,
++        skipIntroduction: true,
+       });
+ 
+       let doc = win.document;
+@@ -1266,6 +1225,14 @@ async function doVariationTest({
+         Assert.equal(mainLogoImage, logoImage);
+       }
+ 
++      info("Check the close button on introduction pane");
++      const onboardingClose = win.document.getElementById("onboardingClose");
++      if (expectedUI.introductionCloseButton) {
++        Assert.ok(BrowserTestUtils.is_visible(onboardingClose));
++      } else {
++        Assert.ok(BrowserTestUtils.is_hidden(onboardingClose));
++      }
++
+       info("Check the l10n attribute");
+       for (const [id, l10n] of Object.entries(expectedL10N)) {
+         const element = win.document.getElementById(id);
+-- 
+2.25.1
+

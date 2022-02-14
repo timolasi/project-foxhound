@@ -1,0 +1,27 @@
+From 7054d7b3b98eadb62d3e4ffe399ccfb93ac4fe4c Mon Sep 17 00:00:00 2001
+From: Barret Rennie <barret@brennie.ca>
+Date: Wed, 12 Jan 2022 16:46:05 +0000
+Subject: [PATCH 23/33] Bug 1749644 - Fix RemoteL10n Fluent directory.
+ r=emcminn, a=RyanVM,dsmith
+
+Differential Revision: https://phabricator.services.mozilla.com/D135665
+---
+ browser/components/newtab/lib/RemoteL10n.jsm | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git b/browser/components/newtab/lib/RemoteL10n.jsm a/browser/components/newtab/lib/RemoteL10n.jsm
+index e8ea7843fc7a..d2d189a18957 100644
+--- b/browser/components/newtab/lib/RemoteL10n.jsm
++++ a/browser/components/newtab/lib/RemoteL10n.jsm
+@@ -186,7 +186,7 @@ class _RemoteL10n {
+     if (useRemoteL10n && !L10nRegistry.getInstance().hasSource("cfr")) {
+       const appLocale = Services.locale.appLocaleAsBCP47;
+       const l10nFluentDir = PathUtils.join(
+-        Services.dirsvc.get("ProfLD", Ci.nsIFile).path,
++        Services.dirsvc.get("ProfD", Ci.nsIFile).path,
+         "settings",
+         "main",
+         "ms-language-packs"
+-- 
+2.25.1
+

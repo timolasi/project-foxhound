@@ -1,0 +1,31 @@
+From 5a4bd2a35d3d0dd021948f6ce6569c7144915ad2 Mon Sep 17 00:00:00 2001
+From: Andrew McCreight <continuation@gmail.com>
+Date: Fri, 7 Jan 2022 14:16:07 +0000
+Subject: [PATCH 24/33] Bug 1748912 - Add null check in
+ CanonicalBrowsingContext::RemoveFromSessionHistory. r=smaug, a=dsmith
+
+Differential Revision: https://phabricator.services.mozilla.com/D135270
+---
+ docshell/base/CanonicalBrowsingContext.cpp | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git b/docshell/base/CanonicalBrowsingContext.cpp a/docshell/base/CanonicalBrowsingContext.cpp
+index 92cd326731e6..d995cc9afbe9 100644
+--- b/docshell/base/CanonicalBrowsingContext.cpp
++++ a/docshell/base/CanonicalBrowsingContext.cpp
+@@ -1038,9 +1038,9 @@ void CanonicalBrowsingContext::RemoveFromSessionHistory(const nsID& aChangeID) {
+       BrowsingContext* rootBC = shistory->GetBrowsingContext();
+       if (rootBC) {
+         if (!rootBC->IsInProcess()) {
+-          if (ContentParent* cp = rootBC->Canonical()->GetContentParent()) {
+-            Unused << cp->SendDispatchLocationChangeEvent(rootBC);
+-          }
++          Unused << rootBC->Canonical()
++                        ->GetContentParent()
++                        ->SendDispatchLocationChangeEvent(rootBC);
+         } else if (rootBC->GetDocShell()) {
+           rootBC->GetDocShell()->DispatchLocationChangeEvent();
+         }
+-- 
+2.25.1
+

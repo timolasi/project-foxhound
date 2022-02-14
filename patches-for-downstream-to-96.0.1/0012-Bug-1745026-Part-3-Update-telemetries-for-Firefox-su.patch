@@ -1,0 +1,664 @@
+From c6faa95054a0f309f2b15fa3c1be2a9c203311a9 Mon Sep 17 00:00:00 2001
+From: Daisuke Akatsuka <daisuke@birchill.co.jp>
+Date: Fri, 7 Jan 2022 21:33:04 +0000
+Subject: [PATCH 12/33] Bug 1745026 - Part 3: Update telemetries for Firefox
+ suggest onboarding dialog. r=adw, a=dsmith
+
+Differential Revision: https://phabricator.services.mozilla.com/D134374
+---
+ browser/components/urlbar/UrlbarPrefs.jsm     |  2 +-
+ .../components/urlbar/UrlbarQuickSuggest.jsm  | 68 +++++++++++-----
+ .../urlbar/content/quicksuggestOnboarding.js  | 11 ++-
+ .../urlbar/docs/firefox-suggest-telemetry.rst | 77 ++++---------------
+ .../browser_quicksuggest_onboardingDialog.js  | 68 ++++++++--------
+ toolkit/components/telemetry/Events.yaml      | 22 +++---
+ .../telemetry/docs/data/environment.rst       |  2 +-
+ 7 files changed, 112 insertions(+), 138 deletions(-)
+
+diff --git b/browser/components/urlbar/UrlbarPrefs.jsm a/browser/components/urlbar/UrlbarPrefs.jsm
+index 130ebe267d97..93fbb4f9cc29 100644
+--- b/browser/components/urlbar/UrlbarPrefs.jsm
++++ a/browser/components/urlbar/UrlbarPrefs.jsm
+@@ -248,7 +248,7 @@ const PREF_URLBAR_DEFAULTS = new Map([
+   ["quicksuggest.dataCollection.enabled", false],
+ 
+   // The version of dialog user saw.
+-  ["quicksuggest.onboardingDialogVersion", ""],
++  ["quicksuggest.onboardingDialogVersion", 0],
+ 
+   // Whether to show the quick suggest onboarding dialog.
+   ["quicksuggest.shouldShowOnboardingDialog", true],
+diff --git b/browser/components/urlbar/UrlbarQuickSuggest.jsm a/browser/components/urlbar/UrlbarQuickSuggest.jsm
+index c707262c7322..0d448653563f 100644
+--- b/browser/components/urlbar/UrlbarQuickSuggest.jsm
++++ a/browser/components/urlbar/UrlbarQuickSuggest.jsm
+@@ -46,13 +46,12 @@ const DIALOG_VARIATION_PREF = "quickSuggestOnboardingDialogVariation";
+ // Values returned by the onboarding dialog depending on the user's response.
+ // These values are used in telemetry events, so be careful about changing them.
+ const ONBOARDING_CHOICE = {
+-  ACCEPT_2: "accept_2",
+-  CLOSE_1: "close_1",
+-  DISMISS_1: "dismiss_1",
+-  DISMISS_2: "dismiss_2",
+-  LEARN_MORE_2: "learn_more_2",
+-  NOT_NOW_2: "not_now_2",
+-  REJECT_2: "reject_2",
++  ACCEPT: "accept",
++  REJECT: "reject",
++  DISMISSED_ESCAPE_KEY: "dismissed_escape_key",
++  DISMISSED_OTHER: "dismissed_other",
++  LEARN_MORE: "learn_more",
++  NOT_NOW: "not_now_link",
+ };
+ 
+ const ONBOARDING_URI =
+@@ -234,43 +233,70 @@ class Suggestions {
+ 
+     let win = BrowserWindowTracker.getTopWindow();
+ 
++    // Set up a key listener so we can tell when the dialog is dismissed with
++    // the Escape key. There are a few reasons this is so complicated:
++    //
++    // (1) Key events are not dispatched to the dialog content when the focus is
++    //     not in the dialog. The focus is in the dialog initially, but all it
++    //     takes to move out of the dialog is for the user to click outside it,
++    //     as they might when they're trying to dismiss it. Therefore we add our
++    //     key listener here, to the browser window.
++    // (2) `keypress` is not dispatched to the browser window when the focus is
++    //     inside the dialog but `keydown` is, so we listen for `keydown`.
++    // (3) Our dialog will be queued and deferred if other dialogs are currently
++    //     shown, so don't assume the first Escape key is related to ours.
++    let escapeKeyPressed = false;
++    let keyListener = keyEvent => {
++      if (
++        keyEvent.keyCode == keyEvent.DOM_VK_ESCAPE &&
++        win.gDialogBox.dialog?.frameContentWindow?.document?.documentURI ==
++          ONBOARDING_URI
++      ) {
++        escapeKeyPressed = true;
++      }
++    };
++    win.addEventListener("keydown", keyListener, true);
++
+     let variationType;
+     try {
+       // An error happens if the pref is not in user prefs.
+       variationType = UrlbarPrefs.get(DIALOG_VARIATION_PREF).toLowerCase();
+     } catch (e) {}
+ 
+-    let params = { choice: undefined, variationType, visitedMain: false };
++    let params = { choice: undefined, variationType };
+     await win.gDialogBox.open(ONBOARDING_URI, params);
+ 
++    win.removeEventListener("keydown", keyListener, true);
++
+     UrlbarPrefs.set(SEEN_DIALOG_PREF, true);
+-    UrlbarPrefs.set(
+-      DIALOG_VERSION_PREF,
+-      JSON.stringify({ version: 1, variation: variationType })
+-    );
++    UrlbarPrefs.set(DIALOG_VERSION_PREF, 1);
+ 
+     // Record the user's opt-in choice on the user branch. This pref is sticky,
+     // so it will retain its user-branch value regardless of what the particular
+     // default was at the time.
+-    let optedIn = params.choice == ONBOARDING_CHOICE.ACCEPT_2;
++    let optedIn = params.choice == ONBOARDING_CHOICE.ACCEPT;
+     UrlbarPrefs.set("quicksuggest.dataCollection.enabled", optedIn);
+ 
+     switch (params.choice) {
+-      case ONBOARDING_CHOICE.LEARN_MORE_2:
++      case ONBOARDING_CHOICE.LEARN_MORE:
+         win.openTrustedLinkIn(UrlbarProviderQuickSuggest.helpUrl, "tab", {
+           fromChrome: true,
+         });
+         break;
+-      case ONBOARDING_CHOICE.ACCEPT_2:
+-      case ONBOARDING_CHOICE.REJECT_2:
+-      case ONBOARDING_CHOICE.NOT_NOW_2:
+-      case ONBOARDING_CHOICE.CLOSE_1:
++      case ONBOARDING_CHOICE.ACCEPT:
++      case ONBOARDING_CHOICE.REJECT:
++      case ONBOARDING_CHOICE.NOT_NOW:
+         // No other action required.
+         break;
+       default:
+-        params.choice = params.visitedMain
+-          ? ONBOARDING_CHOICE.DISMISS_2
+-          : ONBOARDING_CHOICE.DISMISS_1;
++        if (escapeKeyPressed) {
++          params.choice = ONBOARDING_CHOICE.DISMISSED_ESCAPE_KEY;
++          break;
++        }
++        // Catch-all for other cases. Typically this should not happen, but one
++        // case where it does is when the dialog is replaced by another higher
++        // priority dialog like the one that's shown when quitting the app.
++        params.choice = ONBOARDING_CHOICE.DISMISSED_OTHER;
+         break;
+     }
+ 
+diff --git b/browser/components/urlbar/content/quicksuggestOnboarding.js a/browser/components/urlbar/content/quicksuggestOnboarding.js
+index 09bc1ef985fa..2e5d9973910f 100644
+--- b/browser/components/urlbar/content/quicksuggestOnboarding.js
++++ a/browser/components/urlbar/content/quicksuggestOnboarding.js
+@@ -147,14 +147,13 @@ document.addEventListener("DOMContentLoaded", async () => {
+   addSubmitListener(document.getElementById("onboardingNext"), () => {
+     document.getElementById("introduction-section").classList.add("inactive");
+     document.getElementById("main-section").classList.add("active");
+-    window.arguments[0].visitedMain = true;
+   });
+   addSubmitListener(document.getElementById("onboardingLearnMore"), () => {
+-    window.arguments[0].choice = ONBOARDING_CHOICE.LEARN_MORE_2;
++    window.arguments[0].choice = ONBOARDING_CHOICE.LEARN_MORE;
+     window.close();
+   });
+   addSubmitListener(document.getElementById("onboardingSkipLink"), () => {
+-    window.arguments[0].choice = ONBOARDING_CHOICE.NOT_NOW_2;
++    window.arguments[0].choice = ONBOARDING_CHOICE.NOT_NOW;
+     window.close();
+   });
+ 
+@@ -179,8 +178,8 @@ document.addEventListener("DOMContentLoaded", async () => {
+     }
+ 
+     window.arguments[0].choice = onboardingAccept.checked
+-      ? ONBOARDING_CHOICE.ACCEPT_2
+-      : ONBOARDING_CHOICE.REJECT_2;
++      ? ONBOARDING_CHOICE.ACCEPT
++      : ONBOARDING_CHOICE.REJECT;
+     window.close();
+   }
+   addSubmitListener(onboardingSubmit, submitListener);
+@@ -207,7 +206,7 @@ async function applyVariation(variation) {
+     const onboardingClose = document.getElementById("onboardingClose");
+     onboardingClose.classList.add("active");
+     addSubmitListener(onboardingClose, () => {
+-      window.arguments[0].choice = ONBOARDING_CHOICE.CLOSE_1;
++      window.arguments[0].choice = ONBOARDING_CHOICE.NOT_NOW;
+       window.close();
+     });
+   }
+diff --git b/browser/components/urlbar/docs/firefox-suggest-telemetry.rst a/browser/components/urlbar/docs/firefox-suggest-telemetry.rst
+index 356f60099bce..609bea662f86 100644
+--- b/browser/components/urlbar/docs/firefox-suggest-telemetry.rst
++++ a/browser/components/urlbar/docs/firefox-suggest-telemetry.rst
+@@ -210,46 +210,26 @@ This event is recorded when the user interacts with the online modal dialog.
+ The event's objects are the following:
+ 
+ :accept:
+-  The user accepted the dialog and opted in. This object was removed in Firefox
+-  96.0.1.
+-:accept_2:
+   The user accepted the dialog and opted in.
+-:close_1:
+-  The user clicked close button or something similar link on introduction
+-  section. The user remains opted out in this case.
+-:dismiss_1:
+-  The user dismissed the dialog by pressing the Escape key or some unknown way
+-  on introduction section. The user remains opted out in this case.
+-:dismiss_2:
+-  The user dismissed the dialog by pressing the Escape key or some unknown way
+-  on main section. The user remains opted out in this case.
++:reject:
++  The user rejected the dialog and opted out.
+ :dismissed_escape_key:
+   The user dismissed the dialog by pressing the Escape key. The user remains
+-  opted out in this case. This object was removed in Firefox 96.0.1.
++  opted out in this case.
+ :dismissed_other:
+   The dialog was dismissed in some unknown way. One case where this can happen
+   is when the dialog is replaced with another higher priority dialog like the
+   one shown when quitting the app. The user remains opted out in this case.
+-  This object was removed in Firefox 96.0.1.
+ :learn_more:
+-  The user clicked "Learn more". The user remains opted out in this case. This
+-  object was removed in Firefox 96.0.1.
+-:learn_more_2:
+   The user clicked "Learn more". The user remains opted out in this case.
++:not_now_link:
++  The user clicked "Not now". The user remains opted out in this case.
+ :not_now:
+   The dialog was dismissed in some way without opting in. This object was
+   removed in Firefox 94.0.
+-:not_now_2:
+-  The user clicked "Not now" link on main section. The user remains opted out in
+-  this case.
+-:not_now_link:
+-  The user clicked "Not now". The user remains opted out in this case. This
+-  object was removed in Firefox 96.0.1.
+-:reject_2:
+-  The user rejected the dialog and opted out.
+ :settings:
+   The user clicked the "Customize" button. The user remains opted out in this
+-  case. This object was removed in Firefox 96.0.1.
++  case. This object was removed in Firefox 96.0.
+ 
+ Changelog
+   Firefox 92.0.1
+@@ -262,9 +242,9 @@ Changelog
+     ``dismissed_other``, ``learn_more``, ``not_now_link``, and ``settings``.
+     [Bug 1733687_]
+ 
+-  Firefox 96.0.1
+-    Objects changed to: ``accept_2``, ``reject_2``, ``learn_more_2``,
+-    ``close_1``, ``not_now_2``, ``dismiss_1`` and ``dismiss_2``.
++  Firefox 96.0
++    Objects changed to: ``accept``, ``reject``, ``dismissed_escape_key``,
++    ``dismissed_other``, ``learn_more`` and ``not_now_link``.
+     [Bug 1745026_]
+ 
+ .. _1723860: https://bugzilla.mozilla.org/show_bug.cgi?id=1723860
+@@ -317,53 +297,30 @@ string-valued pref with the following possible values:
+ :<empty string>:
+   The user has not made a choice (e.g., because the dialog hasn't been shown).
+ :accept:
+-  The user accepted the dialog and opted in. This object was removed in Firefox
+-  96.0.1.
+-:accept_2:
+   The user accepted the dialog and opted in.
+-:close_1:
+-  The user clicked close button or something similar link on introduction
+-  section. The user remains opted out in this case.
+-:dismiss_1:
+-  The user dismissed the dialog by pressing the Escape key or some unknown way
+-  on introduction section. The user remains opted out in this case.
+-:dismiss_2:
+-  The user dismissed the dialog by pressing the Escape key or some unknown way
+-  on main section. The user remains opted out in this case.
++:reject:
++  The user rejected the dialog and opted out.
+ :dismissed_escape_key:
+   The user dismissed the dialog by pressing the Escape key. The user remains
+-  opted out in this case. This object was removed in Firefox 96.0.1.
++  opted out in this case.
+ :dismissed_other:
+   The dialog was dismissed in some unknown way. One case where this can happen
+   is when the dialog is replaced with another higher priority dialog like the
+-  one shown when quitting the app. The user remains opted out in this case. This
+-  object was removed in Firefox 96.0.1.
++  one shown when quitting the app. The user remains opted out in this case.
+ :learn_more:
+-  The user clicked "Learn more". The user remains opted out in this case. This
+-  object was removed in Firefox 96.0.1.
+-:learn_more_2:
+   The user clicked "Learn more". The user remains opted out in this case.
+-:not_now_2:
+-  The user clicked "Not now" link on main section. The user remains opted out in
+-  this case.
+ :not_now_link:
+-  The user clicked "Not now". The user remains opted out in this case. This
+-  object was removed in Firefox 96.0.1.
+-:reject_2:
+-  The user rejected the dialog and opted out.
++  The user clicked "Not now". The user remains opted out in this case.
+ :settings:
+   The user clicked the "Customize" button. The user remains opted out in this
+-  case. This object was removed in Firefox 96.0.1.
++  case. This object was removed in Firefox 96.0.
+ 
+ Changelog
+   Firefox 94.0
+     Introduced. [Bug 1734447_]
+ 
+-  Firefox 96.0.1
+-    Added ``accept_2``, ``reject_2``, ``learn_more_2``, ``close_1``,
+-    ``not_now_2``, ``dismiss_1``, ``dismiss_2`` and removed ``accept``,
+-    ``dismissed_escape_key``, ``dismissed_other``, ``learn_more``,
+-    ``not_now_link``, ``settings``. [Bug 1745026_]
++  Firefox 96.0
++    Added ``reject`` and removed ``settings``. [Bug 1745026_]
+ 
+ .. _1734447: https://bugzilla.mozilla.org/show_bug.cgi?id=1734447
+ .. _1745026: https://bugzilla.mozilla.org/show_bug.cgi?id=1745026
+diff --git b/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js a/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js
+index 0598a192b4f1..7f6ef584bebe 100644
+--- b/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js
++++ a/browser/components/urlbar/tests/quicksuggest/browser/browser_quicksuggest_onboardingDialog.js
+@@ -103,9 +103,8 @@ add_task(async function accept() {
+       );
+       Assert.equal(gBrowser.tabs.length, tabCount, "No news tabs were opened");
+     },
+-    onboardingDialogChoice: "accept_2",
++    onboardingDialogChoice: "accept",
+     expectedUserBranchPrefs: {
+-      "quicksuggest.onboardingDialogVersion": JSON.stringify({ version: 1 }),
+       "quicksuggest.dataCollection.enabled": true,
+     },
+     telemetryEvents: [
+@@ -117,7 +116,7 @@ add_task(async function accept() {
+       {
+         category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+         method: "opt_in_dialog",
+-        object: "accept_2",
++        object: "accept",
+       },
+     ],
+   });
+@@ -150,7 +149,7 @@ add_task(async function reject() {
+       );
+       Assert.equal(gBrowser.tabs.length, tabCount, "No news tabs were opened");
+     },
+-    onboardingDialogChoice: "reject_2",
++    onboardingDialogChoice: "reject",
+     expectedUserBranchPrefs: {
+       "quicksuggest.dataCollection.enabled": false,
+     },
+@@ -163,7 +162,7 @@ add_task(async function reject() {
+       {
+         category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+         method: "opt_in_dialog",
+-        object: "reject_2",
++        object: "reject",
+       },
+     ],
+   });
+@@ -193,7 +192,7 @@ add_task(async function skip() {
+       );
+       Assert.equal(gBrowser.tabs.length, tabCount, "No news tabs were opened");
+     },
+-    onboardingDialogChoice: "not_now_2",
++    onboardingDialogChoice: "not_now_link",
+     expectedUserBranchPrefs: {
+       "quicksuggest.dataCollection.enabled": false,
+     },
+@@ -206,7 +205,7 @@ add_task(async function skip() {
+       {
+         category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+         method: "opt_in_dialog",
+-        object: "not_now_2",
++        object: "not_now_link",
+       },
+     ],
+   });
+@@ -247,7 +246,7 @@ add_task(async function learnMore() {
+       );
+       BrowserTestUtils.removeTab(tab);
+     },
+-    onboardingDialogChoice: "learn_more_2",
++    onboardingDialogChoice: "learn_more",
+     expectedUserBranchPrefs: {
+       "quicksuggest.dataCollection.enabled": false,
+     },
+@@ -260,7 +259,7 @@ add_task(async function learnMore() {
+       {
+         category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+         method: "opt_in_dialog",
+-        object: "learn_more_2",
++        object: "learn_more",
+       },
+     ],
+   });
+@@ -278,7 +277,6 @@ add_task(async function escKey_focusInsideDialog() {
+         document.activeElement.classList.contains("dialogFrame"),
+         "dialogFrame is focused in the browser window"
+       );
+-
+       EventUtils.synthesizeKey("KEY_Escape");
+       Assert.equal(
+         gBrowser.currentURI.spec,
+@@ -287,7 +285,7 @@ add_task(async function escKey_focusInsideDialog() {
+       );
+       Assert.equal(gBrowser.tabs.length, tabCount, "No news tabs were opened");
+     },
+-    onboardingDialogChoice: "dismiss_2",
++    onboardingDialogChoice: "dismissed_escape_key",
+     expectedUserBranchPrefs: {
+       "quicksuggest.dataCollection.enabled": false,
+     },
+@@ -300,7 +298,7 @@ add_task(async function escKey_focusInsideDialog() {
+       {
+         category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+         method: "opt_in_dialog",
+-        object: "dismiss_2",
++        object: "dismissed_escape_key",
+       },
+     ],
+   });
+@@ -320,7 +318,7 @@ add_task(async function escKey_focusOutsideDialog() {
+       );
+       EventUtils.synthesizeKey("KEY_Escape");
+     },
+-    onboardingDialogChoice: "dismiss_2",
++    onboardingDialogChoice: "dismissed_escape_key",
+     expectedUserBranchPrefs: {
+       "quicksuggest.dataCollection.enabled": false,
+     },
+@@ -333,7 +331,7 @@ add_task(async function escKey_focusOutsideDialog() {
+       {
+         category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+         method: "opt_in_dialog",
+-        object: "dismiss_2",
++        object: "dismissed_escape_key",
+       },
+     ],
+   });
+@@ -387,7 +385,7 @@ async function doQueuedEscKeyTest(otherDialogKey) {
+       EventUtils.synthesizeKey("KEY_Escape");
+       await onboardingClosedPromise;
+     },
+-    onboardingDialogChoice: "dismiss_1",
++    onboardingDialogChoice: "dismissed_escape_key",
+     expectedUserBranchPrefs: {
+       "quicksuggest.dataCollection.enabled": false,
+     },
+@@ -400,7 +398,7 @@ async function doQueuedEscKeyTest(otherDialogKey) {
+       {
+         category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+         method: "opt_in_dialog",
+-        object: "dismiss_1",
++        object: "dismissed_escape_key",
+       },
+     ],
+   });
+@@ -426,7 +424,7 @@ add_task(async function dismissed_other_on_introduction() {
+       gDialogBox._dialog.close();
+       await maybeShowPromise;
+     },
+-    onboardingDialogChoice: "dismiss_1",
++    onboardingDialogChoice: "dismissed_other",
+     expectedUserBranchPrefs: {
+       "quicksuggest.dataCollection.enabled": false,
+     },
+@@ -439,7 +437,7 @@ add_task(async function dismissed_other_on_introduction() {
+       {
+         category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+         method: "opt_in_dialog",
+-        object: "dismiss_1",
++        object: "dismissed_other",
+       },
+     ],
+   });
+@@ -566,7 +564,7 @@ add_task(async function focus_accept() {
+       info("Enter to submit");
+       EventUtils.synthesizeKey("KEY_Enter");
+     },
+-    onboardingDialogChoice: "accept_2",
++    onboardingDialogChoice: "accept",
+     expectedUserBranchPrefs: {
+       "quicksuggest.dataCollection.enabled": true,
+     },
+@@ -579,7 +577,7 @@ add_task(async function focus_accept() {
+       {
+         category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+         method: "opt_in_dialog",
+-        object: "accept_2",
++        object: "accept",
+       },
+     ],
+   });
+@@ -614,7 +612,7 @@ add_task(async function focus_learnMore() {
+       );
+       BrowserTestUtils.removeTab(tab);
+     },
+-    onboardingDialogChoice: "learn_more_2",
++    onboardingDialogChoice: "learn_more",
+     expectedUserBranchPrefs: {
+       "quicksuggest.dataCollection.enabled": false,
+     },
+@@ -627,7 +625,7 @@ add_task(async function focus_learnMore() {
+       {
+         category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+         method: "opt_in_dialog",
+-        object: "learn_more_2",
++        object: "learn_more",
+       },
+     ],
+   });
+@@ -647,7 +645,7 @@ add_task(async function focus_reject() {
+       info("Enter to submit");
+       EventUtils.synthesizeKey("KEY_Enter");
+     },
+-    onboardingDialogChoice: "reject_2",
++    onboardingDialogChoice: "reject",
+     expectedUserBranchPrefs: {
+       "quicksuggest.dataCollection.enabled": false,
+     },
+@@ -660,7 +658,7 @@ add_task(async function focus_reject() {
+       {
+         category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+         method: "opt_in_dialog",
+-        object: "reject_2",
++        object: "reject",
+       },
+     ],
+   });
+@@ -683,7 +681,7 @@ add_task(async function focus_skip() {
+       );
+       Assert.equal(gBrowser.tabs.length, tabCount, "No news tabs were opened");
+     },
+-    onboardingDialogChoice: "not_now_2",
++    onboardingDialogChoice: "not_now_link",
+     expectedUserBranchPrefs: {
+       "quicksuggest.dataCollection.enabled": false,
+     },
+@@ -696,7 +694,7 @@ add_task(async function focus_skip() {
+       {
+         category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+         method: "opt_in_dialog",
+-        object: "not_now_2",
++        object: "not_now_link",
+       },
+     ],
+   });
+@@ -713,7 +711,7 @@ add_task(async function focus_accept_wraparound() {
+       EventUtils.synthesizeKey(" ");
+       EventUtils.synthesizeKey("KEY_Enter");
+     },
+-    onboardingDialogChoice: "accept_2",
++    onboardingDialogChoice: "accept",
+     expectedUserBranchPrefs: {
+       "quicksuggest.dataCollection.enabled": true,
+     },
+@@ -726,7 +724,7 @@ add_task(async function focus_accept_wraparound() {
+       {
+         category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+         method: "opt_in_dialog",
+-        object: "accept_2",
++        object: "accept",
+       },
+     ],
+   });
+@@ -828,7 +826,7 @@ add_task(async function close_button_on_introduction_pane() {
+           info("Waiting for maybeShowOnboardingDialog to finish");
+           await maybeShowPromise;
+         },
+-        onboardingDialogChoice: "close_1",
++        onboardingDialogChoice: "not_now_link",
+         expectedUserBranchPrefs: {
+           "quicksuggest.dataCollection.enabled": false,
+         },
+@@ -841,7 +839,7 @@ add_task(async function close_button_on_introduction_pane() {
+           {
+             category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+             method: "opt_in_dialog",
+-            object: "close_1",
++            object: "not_now_link",
+           },
+         ],
+       });
+@@ -1263,12 +1261,6 @@ async function doVariationTest({
+ 
+       EventUtils.synthesizeKey("KEY_Escape");
+       await maybeShowPromise;
+-
+-      info("Check the version and variation pref");
+-      Assert.equal(
+-        UrlbarPrefs.get("quicksuggest.onboardingDialogVersion"),
+-        JSON.stringify({ version: 1, variation: variation.toLowerCase() })
+-      );
+     },
+   });
+ }
+@@ -1371,7 +1363,7 @@ async function canTabMoveFocus() {
+       EventUtils.synthesizeKey("KEY_Escape");
+       await maybeShowPromise;
+     },
+-    onboardingDialogChoice: "dismiss_2",
++    onboardingDialogChoice: "dismissed_escape_key",
+     expectedUserBranchPrefs: {
+       "quicksuggest.dataCollection.enabled": false,
+     },
+@@ -1384,7 +1376,7 @@ async function canTabMoveFocus() {
+       {
+         category: QuickSuggestTestUtils.TELEMETRY_EVENT_CATEGORY,
+         method: "opt_in_dialog",
+-        object: "dismiss_2",
++        object: "dismissed_escape_key",
+       },
+     ],
+   });
+diff --git b/toolkit/components/telemetry/Events.yaml a/toolkit/components/telemetry/Events.yaml
+index b492b5f18d4e..fc41f653b08e 100644
+--- b/toolkit/components/telemetry/Events.yaml
++++ a/toolkit/components/telemetry/Events.yaml
+@@ -3001,23 +3001,23 @@ contextservices.quicksuggest:
+       - adw@mozilla.com
+     expiry_version: never
+   opt_in_dialog:
+-    objects: ["accept_2", "reject_2", "learn_more_2", "close_1", "not_now_2", "dismiss_1", "dismiss_2"]
++    objects: ["accept", "reject", "dismissed_escape_key", "dismissed_other", "learn_more", "not_now_link"]
+     release_channel_collection: opt-out
+     products:
+       - "firefox"
+     record_in_processes: ["main"]
+     description: >
+       This is recorded when the user responds to the Firefox Suggest opt-in
+-      onboarding dialog. 'accept_2' is recorded when the user accepts the dialog
+-      and opts in, 'reject_2' is recorded when the user rejects the dialog and
+-      opts out, 'learn_more_2' is recorded when the user clicks "Learn more"
+-      (the user remains opted out), 'close_1' is recorded when the user clicks
+-      close button on introduction section (the user remains opted out),
+-      'not_now_2' is recorded when the user clicks "Not now" link on main section
+-      (the user remains opted out), 'dismiss_1' recorded when the user dismisses
+-      the dialog on introduction section (the user remains opted out),
+-      'dismiss_2' recorded when the user dismisses the dialog on main (the user
+-      remains opted out),
++      onboarding dialog. 'accept' is recorded when the user accepts the dialog
++      and opts in, 'settings' is recorded when the user rejects the dialog and
++      opts out, 'learn_more' is recorded when the user clicks "Learn more" (the
++      user remains opted out), 'not_now_link' is recorded when the user clicks
++      "Not now" (the user remains opted out), 'dismissed_escape_key' is recorded
++      when the user dismisses the dialog by pressing the Escape key (the user
++      remains opted out), 'dismissed_other' is recorded when the dialog is
++      dismissed in some other unknown way, for example when the dialog is
++      replaced with another higher priority dialog like the one shown when
++      quitting the app (the user remains opted out)
+     bug_numbers: [1723860, 1745026]
+     notification_emails:
+       - fx-search@mozilla.com
+diff --git b/toolkit/components/telemetry/docs/data/environment.rst a/toolkit/components/telemetry/docs/data/environment.rst
+index 33b0837e192c..40e2da2eabf7 100644
+--- b/toolkit/components/telemetry/docs/data/environment.rst
++++ a/toolkit/components/telemetry/docs/data/environment.rst
+@@ -380,7 +380,7 @@ The following is a partial list of `collected preferences <https://searchfox.org
+ 
+ - ``browser.search.suggest.enabled``: The "master switch" for search suggestions everywhere in Firefox (search bar, urlbar, etc.). Defaults to true.
+ 
+-- ``browser.urlbar.quicksuggest.onboardingDialogChoice``: The user's choice in the Firefox Suggest onboarding dialog. If the dialog was shown multiple times, this records the user's most recent choice. Values are the following. Empty string: The user has not made a choice (e.g., because the dialog hasn't been shown). ``accept_2`` is recorded when the user accepts the dialog and opts in, ``reject_2`` is recorded when the user rejects the dialog and opts out, ``learn_more_2`` is recorded when the user clicks "Learn more" (the user remains opted out), ``close_1`` is recorded when the user clicks close button on introduction section (the user remains opted out), ``not_now_2`` is recorded when the user clicks "Not now" link on main section (the user remains opted out), ``dismiss_1`` recorded when the user dismisses the dialog on introduction section (the user remains opted out), ``dismiss_2`` recorded when the user dismisses the dialog on main (the user remains opted out).
++- ``browser.urlbar.quicksuggest.onboardingDialogChoice``: The user's choice in the Firefox Suggest onboarding dialog. If the dialog was shown multiple times, this records the user's most recent choice. Values are the following. Empty string: The user has not made a choice (e.g., because the dialog hasn't been shown). ``accept``: The user accepted the dialog and opted in. ``settings``: The user clicked in the "Customize" button (the user remains opted out in this case). ``learn_more``: The user clicked "Learn more" (the user remains opted out). ``not_now_link``: The user clicked "Not now" (the user remains opted out). ``dismissed_escape_key``: The user dismissed the dialog by pressing the Escape key (the user remains opted out). ``dismissed_other``: The dialog was dismissed in some other unknown way, for example when the dialog is replaced with another higher priority dialog like the one shown when quitting the app (the user remains opted out).
+ 
+ - ``browser.urlbar.quicksuggest.dataCollection.enabled``: Whether the user has opted in to data collection for Firefox Suggest. This pref is set to true when the user opts in to the Firefox Suggest onboarding dialog modal. The user can also toggle the pref using a toggle switch in the Firefox Suggest preferences UI.
+ 
+-- 
+2.25.1
+

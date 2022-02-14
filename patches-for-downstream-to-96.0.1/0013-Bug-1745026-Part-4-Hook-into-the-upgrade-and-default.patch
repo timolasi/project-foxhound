@@ -1,0 +1,54 @@
+From c91e878a3b82363722b8f0018a8300f6fec8ad4b Mon Sep 17 00:00:00 2001
+From: Drew Willcoxon <adw@mozilla.com>
+Date: Fri, 7 Jan 2022 21:33:04 +0000
+Subject: [PATCH 13/33] Bug 1745026 - Part 4: Hook into the upgrade- and
+ default-browser-dialog logic when determining whether to show the Firefox
+ Suggest opt-in modal. r=nanj,a=dsmith
+
+Currently we check in a startup idle task whether we should show the Firefox
+Suggest online modal, which means the modal competes with the upgrade dialog and
+default-browser prompt. This revision moves the check to the same site where we
+check for the other two dialogs. So now the sequence is:
+
+1. Show the upgrade dialog? If yes, show it and stop. If no, continue.
+2. Show the default-browser prompt? If yes, show it and stop. If no, continue.
+3. Show the Suggest modal if necessary.
+
+Only one of these dialogs will be shown per Firefox session.
+
+Differential Revision: https://phabricator.services.mozilla.com/D135308
+---
+ browser/components/BrowserGlue.jsm | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git b/browser/components/BrowserGlue.jsm a/browser/components/BrowserGlue.jsm
+index 8932488e6eba..468db3dc2764 100644
+--- b/browser/components/BrowserGlue.jsm
++++ a/browser/components/BrowserGlue.jsm
+@@ -2525,6 +2525,12 @@ BrowserGlue.prototype = {
+         },
+       },
+ 
++      {
++        task: () => {
++          UrlbarQuickSuggest.maybeShowOnboardingDialog();
++        },
++      },
++
+       {
+         task: () => {
+           let { setTimeout } = ChromeUtils.import(
+@@ -4103,10 +4109,7 @@ BrowserGlue.prototype = {
+     if (willPrompt) {
+       let win = BrowserWindowTracker.getTopWindow();
+       DefaultBrowserCheck.prompt(win);
+-    } else if (await UrlbarQuickSuggest.maybeShowOnboardingDialog()) {
+-      return;
+     }
+-
+     await ASRouter.waitForInitialized;
+     ASRouter.sendTriggerMessage({
+       browser: BrowserWindowTracker.getTopWindow()?.gBrowser.selectedBrowser,
+-- 
+2.25.1
+

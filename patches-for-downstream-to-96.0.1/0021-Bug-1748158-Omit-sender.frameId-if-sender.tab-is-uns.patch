@@ -1,0 +1,367 @@
+From 0669f3eca7b1b37bb6190e97389e280df7d7ca0a Mon Sep 17 00:00:00 2001
+From: Rob Wu <rob@robwu.nl>
+Date: Thu, 6 Jan 2022 14:15:47 +0000
+Subject: [PATCH 21/33] Bug 1748158 - Omit sender.frameId if sender.tab is
+ unset r=rpl,geckoview-reviewers,jonalmeida, a=dsmith
+
+`sender.frameId` should be set iff `sender.tab` is set, as documented at
+https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/runtime/MessageSender
+The removal of the `viewType == "tab"` condition broke this in
+https://hg.mozilla.org/mozilla-central/rev/2dc4f1baccc8
+
+This patch makes the presence of `frameId` conditional on `tab`, and
+fixes several tests that relied on the incorrect behavior:
+
+- Move the runtime.onConnect test from test_ext_contentscript_in_background.js
+  to a new mochitest at test_ext_runtime_connect_iframe.html.
+
+- Simplify test_ext_contentscript_in_background.js to continue to
+  provide test coverage for contentScripts.register + allFrames.
+
+- Replace runtime.onConnect with runtime.getFrameId in
+  test_ext_contentscript_xorigin_frame.js, since sender.frameId is no
+  longer available in xpcshell tests (because internals to support the
+  tabs extension API are not available in xpcshell tests). The test
+  cannot be moved to a mochitest because its purpose is to provide test
+  coverage for process switching in a xpcshell test (bug 1580811).
+
+Differential Revision: https://phabricator.services.mozilla.com/D135057
+---
+ ...rowser_ext_contentscript_nontab_connect.js |   5 +-
+ .../test_ext_native_messaging_permissions.js  |   4 +-
+ .../components/extensions/ExtensionParent.jsm |   3 +-
+ .../test/mochitest/mochitest-common.ini       |   1 -
+ .../mochitest/test_ext_runtime_connect.html   |   1 -
+ .../test_ext_runtime_connect_iframe.html      | 136 ------------------
+ .../test_ext_contentscript_in_background.js   |  24 +++-
+ .../test_ext_contentscript_xorigin_frame.js   |  29 +++-
+ 8 files changed, 54 insertions(+), 149 deletions(-)
+ delete mode 100644 toolkit/components/extensions/test/mochitest/test_ext_runtime_connect_iframe.html
+
+diff --git b/browser/components/extensions/test/browser/browser_ext_contentscript_nontab_connect.js a/browser/components/extensions/test/browser/browser_ext_contentscript_nontab_connect.js
+index 011f89c14ec2..edcb1c768574 100644
+--- b/browser/components/extensions/test/browser/browser_ext_contentscript_nontab_connect.js
++++ a/browser/components/extensions/test/browser/browser_ext_contentscript_nontab_connect.js
+@@ -11,9 +11,12 @@ function extensionScript() {
+ 
+   browser.runtime.onConnect.addListener(port => {
+     browser.test.assertEq(port.sender.tab, undefined, "Sender is not a tab");
+-    browser.test.assertEq(port.sender.frameId, undefined, "frameId unset");
+     browser.test.assertEq(port.sender.url, FRAME_URL, "Expected sender URL");
+ 
++    let { frameId } = port.sender;
++    browser.test.assertEq(typeof frameId, "number", "frameId is a number");
++    browser.test.assertTrue(frameId > 0, "frameId greater than 0");
++
+     port.onMessage.addListener(msg => {
+       browser.test.assertEq("pong", msg, "Reply from content script");
+       port.disconnect();
+diff --git b/mobile/android/components/extensions/test/xpcshell/test_ext_native_messaging_permissions.js a/mobile/android/components/extensions/test/xpcshell/test_ext_native_messaging_permissions.js
+index 2c7ac3cc2f47..50e1cc93cf4d 100644
+--- b/mobile/android/components/extensions/test/xpcshell/test_ext_native_messaging_permissions.js
++++ a/mobile/android/components/extensions/test/xpcshell/test_ext_native_messaging_permissions.js
+@@ -96,7 +96,7 @@ add_task(async function test_nativeMessaging_unprivileged() {
+ add_task(async function test_geckoViewAddons_missing() {
+   const ERROR_NATIVE_MESSAGE_FROM_BACKGROUND =
+     "Native manifests are not supported on android";
+-  const ERROR_NATIVE_MESSAGE_FROM_CONTENT = /^Native messaging not allowed: \{.*"envType":"content_child","url":"http:\/\/example\.com\/dummy"\}$/;
++  const ERROR_NATIVE_MESSAGE_FROM_CONTENT = /^Native messaging not allowed: \{.*"envType":"content_child","frameId":0,"url":"http:\/\/example\.com\/dummy"\}$/;
+ 
+   async function testBackground() {
+     await browser.test.assertRejects(
+@@ -134,7 +134,7 @@ add_task(async function test_geckoViewAddons_missing() {
+ // Checks that privileged extensions cannot use native messaging from content
+ // without the nativeMessagingFromContent permission.
+ add_task(async function test_nativeMessagingFromContent_missing() {
+-  const ERROR_NATIVE_MESSAGE_FROM_CONTENT_NO_PERM = /^Unexpected messaging sender: \{.*"envType":"content_child","url":"http:\/\/example\.com\/dummy"\}$/;
++  const ERROR_NATIVE_MESSAGE_FROM_CONTENT_NO_PERM = /^Unexpected messaging sender: \{.*"envType":"content_child","frameId":0,"url":"http:\/\/example\.com\/dummy"\}$/;
+   function testBackground() {
+     // sendNativeMessage / connectNative are expected to succeed, but we
+     // are not testing that here because XpcshellTestRunnerService does not
+diff --git b/toolkit/components/extensions/ExtensionParent.jsm a/toolkit/components/extensions/ExtensionParent.jsm
+index b67ac00fb135..4934b6cea5cb 100644
+--- b/toolkit/components/extensions/ExtensionParent.jsm
++++ a/toolkit/components/extensions/ExtensionParent.jsm
+@@ -298,6 +298,7 @@ const ProxyMessenger = {
+       contextId: source.id,
+       id: source.extensionId,
+       envType: source.envType,
++      frameId: source.frameId,
+       url: source.url,
+     };
+ 
+@@ -307,8 +308,6 @@ const ProxyMessenger = {
+         browser && apiManager.global.tabTracker.getBrowserData(browser);
+       if (data?.tabId > 0) {
+         sender.tab = extension.tabManager.get(data.tabId, null)?.convert();
+-        // frameId is documented to only be set if sender.tab is set.
+-        sender.frameId = source.frameId;
+       }
+     }
+ 
+diff --git b/toolkit/components/extensions/test/mochitest/mochitest-common.ini a/toolkit/components/extensions/test/mochitest/mochitest-common.ini
+index a9c7625c284d..f109cc05d2e1 100644
+--- b/toolkit/components/extensions/test/mochitest/mochitest-common.ini
++++ a/toolkit/components/extensions/test/mochitest/mochitest-common.ini
+@@ -143,7 +143,6 @@ skip-if = os == 'win' && (debug || asan) # Bug 1563440
+ [test_ext_request_urlClassification.html]
+ skip-if = os == 'android' # Bug 1615427
+ [test_ext_runtime_connect.html]
+-[test_ext_runtime_connect_iframe.html]
+ [test_ext_runtime_connect_twoway.html]
+ [test_ext_runtime_connect2.html]
+ [test_ext_runtime_disconnect.html]
+diff --git b/toolkit/components/extensions/test/mochitest/test_ext_runtime_connect.html a/toolkit/components/extensions/test/mochitest/test_ext_runtime_connect.html
+index 85f98d503411..c4726092ecb4 100644
+--- b/toolkit/components/extensions/test/mochitest/test_ext_runtime_connect.html
++++ a/toolkit/components/extensions/test/mochitest/test_ext_runtime_connect.html
+@@ -17,7 +17,6 @@ function background() {
+     browser.test.assertEq(port.name, "ernie", "port name correct");
+     browser.test.assertTrue(port.sender.url.endsWith("file_sample.html"), "URL correct");
+     browser.test.assertTrue(port.sender.tab.url.endsWith("file_sample.html"), "tab URL correct");
+-    browser.test.assertEq(port.sender.frameId, 0, "frameId of top frame");
+ 
+     let expected = "message 1";
+     port.onMessage.addListener(msg => {
+diff --git b/toolkit/components/extensions/test/mochitest/test_ext_runtime_connect_iframe.html a/toolkit/components/extensions/test/mochitest/test_ext_runtime_connect_iframe.html
+deleted file mode 100644
+index 9c64635063f8..000000000000
+--- b/toolkit/components/extensions/test/mochitest/test_ext_runtime_connect_iframe.html
++++ /dev/null
+@@ -1,136 +0,0 @@
+-<!DOCTYPE HTML>
+-<html>
+-<head>
+-  <title>WebExtension test</title>
+-  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+-  <script src="/tests/SimpleTest/ExtensionTestUtils.js"></script>
+-  <script type="text/javascript" src="head.js"></script>
+-  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+-</head>
+-<body>
+-
+-<script type="text/javascript">
+-"use strict";
+-
+-// The purpose of this test is to verify that the port.sender properties are
+-// not set for messages from iframes in background scripts. This is the toolkit
+-// version of the browser_ext_contentscript_nontab_connect.js test, and exists
+-// to provide test coverage for non-toolkit builds (e.g. Android).
+-//
+-// This used to be a xpcshell test (from bug 1488105), but became a mochitest
+-// because port.sender.tab and port.sender.frameId do not represent the real
+-// values in xpcshell tests.
+-// Specifically, ProxyMessenger.prototype.getSender uses the tabTracker, which
+-// expects real tabs instead of browsers from the ContentPage API in xpcshell
+-// tests.
+-add_task(async function connect_from_background_frame() {
+-  if (!SpecialPowers.getBoolPref("extensions.webextensions.remote", true)) {
+-    info("Cannot load remote content in parent process; skipping test task");
+-    return;
+-  }
+-  async function background() {
+-    const FRAME_URL = "https://example.com/tests/toolkit/components/extensions/test/mochitest/file_sample.html";
+-    browser.runtime.onConnect.addListener(port => {
+-      // The next two assertions are the reason for this being a mochitest
+-      // instead of a xpcshell test.
+-      browser.test.assertEq(port.sender.tab, undefined, "Sender is not a tab");
+-      browser.test.assertEq(port.sender.frameId, undefined, "frameId unset");
+-      browser.test.assertEq(port.sender.url, FRAME_URL, "Expected sender URL");
+-      port.onMessage.addListener(msg => {
+-        browser.test.assertEq("pong", msg, "Reply from content script");
+-        port.disconnect();
+-      });
+-      port.postMessage("ping");
+-    });
+-
+-    await browser.contentScripts.register({
+-      matches: [FRAME_URL],
+-      js: [{ file: "contentscript.js" }],
+-      allFrames: true,
+-    });
+-
+-    let f = document.createElement("iframe");
+-    f.src = FRAME_URL;
+-    document.body.appendChild(f);
+-  }
+-
+-  function contentScript() {
+-    browser.test.log(`Running content script at ${document.URL}`);
+-
+-    let port = browser.runtime.connect();
+-    port.onMessage.addListener(msg => {
+-      browser.test.assertEq("ping", msg, "Expected message to content script");
+-      port.postMessage("pong");
+-    });
+-    port.onDisconnect.addListener(() => {
+-      browser.test.sendMessage("disconnected_in_content_script");
+-    });
+-  }
+-
+-  let extension = ExtensionTestUtils.loadExtension({
+-    manifest: {
+-      permissions: ["https://example.com/*"],
+-    },
+-    files: {
+-      "contentscript.js": contentScript,
+-    },
+-    background,
+-  });
+-  await extension.startup();
+-  await extension.awaitMessage("disconnected_in_content_script");
+-  await extension.unload();
+-});
+-
+-// The test_ext_contentscript_fission_frame.html test already checks the
+-// behavior of onConnect in cross-origin frames, so here we just limit the test
+-// to checking that the port.sender properties are sensible.
+-add_task(async function connect_from_content_script_in_frame() {
+-  async function background() {
+-    const TAB_URL = "https://example.org/tests/toolkit/components/extensions/test/mochitest/file_contains_iframe.html";
+-    const FRAME_URL = "https://example.org/tests/toolkit/components/extensions/test/mochitest/file_contains_img.html";
+-    let createdTab;
+-    browser.runtime.onConnect.addListener(port => {
+-      // The next two assertions are the reason for this being a mochitest
+-      // instead of a xpcshell test.
+-      browser.test.assertEq(port.sender.tab.url, TAB_URL, "Sender is the tab");
+-      browser.test.assertTrue(port.sender.frameId > 0, "frameId is set");
+-      browser.test.assertEq(port.sender.url, FRAME_URL, "Expected sender URL");
+-
+-      browser.test.assertEq(createdTab.id, port.sender.tab.id, "Tab to close");
+-      browser.tabs.remove(port.sender.tab.id).then(() => {
+-        browser.test.sendMessage("tab_port_checked_and_tab_closed");
+-      });
+-    });
+-
+-    await browser.contentScripts.register({
+-      matches: [FRAME_URL],
+-      js: [{ file: "contentscript.js" }],
+-      allFrames: true,
+-    });
+-
+-    createdTab = await browser.tabs.create({ url: TAB_URL });
+-  }
+-
+-  function contentScript() {
+-    browser.test.log(`Running content script at ${document.URL}`);
+-
+-    browser.runtime.connect();
+-  }
+-
+-  let extension = ExtensionTestUtils.loadExtension({
+-    manifest: {
+-      permissions: ["https://example.org/*"],
+-    },
+-    files: {
+-      "contentscript.js": contentScript,
+-    },
+-    background,
+-  });
+-  await extension.startup();
+-  await extension.awaitMessage("tab_port_checked_and_tab_closed");
+-  await extension.unload();
+-});
+-</script>
+-
+-</body>
+-</html>
+diff --git b/toolkit/components/extensions/test/xpcshell/test_ext_contentscript_in_background.js a/toolkit/components/extensions/test/xpcshell/test_ext_contentscript_in_background.js
+index e813b46ca0cc..1a8aa6d7060d 100644
+--- b/toolkit/components/extensions/test/xpcshell/test_ext_contentscript_in_background.js
++++ a/toolkit/components/extensions/test/xpcshell/test_ext_contentscript_in_background.js
+@@ -9,9 +9,19 @@ server.registerPathHandler("/dummyFrame", (request, response) => {
+   response.write("");
+ });
+ 
+-add_task(async function content_script_in_background_frame() {
++add_task(async function connect_from_background_frame() {
+   async function background() {
+     const FRAME_URL = "http://example.com:8888/dummyFrame";
++    browser.runtime.onConnect.addListener(port => {
++      browser.test.assertEq(port.sender.tab, undefined, "Sender is not a tab");
++      browser.test.assertEq(port.sender.url, FRAME_URL, "Expected sender URL");
++      port.onMessage.addListener(msg => {
++        browser.test.assertEq("pong", msg, "Reply from content script");
++        port.disconnect();
++      });
++      port.postMessage("ping");
++    });
++
+     await browser.contentScripts.register({
+       matches: ["http://example.com/dummyFrame"],
+       js: [{ file: "contentscript.js" }],
+@@ -25,7 +35,15 @@ add_task(async function content_script_in_background_frame() {
+ 
+   function contentScript() {
+     browser.test.log(`Running content script at ${document.URL}`);
+-    browser.test.sendMessage("done_in_content_script");
++
++    let port = browser.runtime.connect();
++    port.onMessage.addListener(msg => {
++      browser.test.assertEq("ping", msg, "Expected message to content script");
++      port.postMessage("pong");
++    });
++    port.onDisconnect.addListener(() => {
++      browser.test.sendMessage("disconnected_in_content_script");
++    });
+   }
+ 
+   let extension = ExtensionTestUtils.loadExtension({
+@@ -38,6 +56,6 @@ add_task(async function content_script_in_background_frame() {
+     background,
+   });
+   await extension.startup();
+-  await extension.awaitMessage("done_in_content_script");
++  await extension.awaitMessage("disconnected_in_content_script");
+   await extension.unload();
+ });
+diff --git b/toolkit/components/extensions/test/xpcshell/test_ext_contentscript_xorigin_frame.js a/toolkit/components/extensions/test/xpcshell/test_ext_contentscript_xorigin_frame.js
+index 8a58b2475c68..cab508b04008 100644
+--- b/toolkit/components/extensions/test/xpcshell/test_ext_contentscript_xorigin_frame.js
++++ a/toolkit/components/extensions/test/xpcshell/test_ext_contentscript_xorigin_frame.js
+@@ -17,6 +17,23 @@ add_task(async function test_process_switch_cross_origin_frame() {
+       ],
+     },
+ 
++    background() {
++      browser.runtime.onConnect.addListener(port => {
++        port.onMessage.addListener(async () => {
++          let { url, frameId } = port.sender;
++
++          browser.test.assertTrue(frameId > 0, "sender frameId is ok");
++          browser.test.assertTrue(
++            url.endsWith("file_iframe.html"),
++            "url is ok"
++          );
++
++          port.postMessage(frameId);
++          port.disconnect();
++        });
++      });
++    },
++
+     files: {
+       "cs.js"() {
+         browser.test.assertEq(
+@@ -25,9 +42,15 @@ add_task(async function test_process_switch_cross_origin_frame() {
+           "url is ok"
+         );
+ 
+-        // frameId is the BrowsingContext ID in practice.
+-        let frameId = browser.runtime.getFrameId(window);
+-        browser.test.sendMessage("content-script-loaded", frameId);
++        let frameId;
++        let port = browser.runtime.connect();
++        port.onMessage.addListener(response => {
++          frameId = response;
++        });
++        port.onDisconnect.addListener(() => {
++          browser.test.sendMessage("content-script-loaded", frameId);
++        });
++        port.postMessage("hello");
+       },
+     },
+   });
+-- 
+2.25.1
+

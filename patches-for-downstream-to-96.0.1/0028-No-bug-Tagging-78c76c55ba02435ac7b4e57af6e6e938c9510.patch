@@ -1,0 +1,23 @@
+From 372ac6b4a53e7df7100f0da099e2d2d2a133c347 Mon Sep 17 00:00:00 2001
+From: Mozilla Releng Treescript <release+treescript@mozilla.org>
+Date: Thu, 20 Jan 2022 13:25:38 +0000
+Subject: [PATCH 28/33] No bug - Tagging
+ 78c76c55ba02435ac7b4e57af6e6e938c9510812 with FIREFOX_96_0_2_RELEASE
+ a=release CLOSED TREE DONTBUILD
+
+---
+ .hgtags | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git b/.hgtags a/.hgtags
+index c1db42688e39..c0dde0e7653c 100644
+--- b/.hgtags
++++ a/.hgtags
+@@ -3404,4 +3404,3 @@ fc698f2bd31f78fb8586e62c7b660a08d6971b92 FIREFOX_96_0_RELEASE
+ be5a26bea29ae03aceaba84e36f205f01c2be791 FIREFOX_96_0_1_BUILD1
+ be5a26bea29ae03aceaba84e36f205f01c2be791 FIREFOX_96_0_1_RELEASE
+ 78c76c55ba02435ac7b4e57af6e6e938c9510812 FIREFOX_96_0_2_BUILD1
+-78c76c55ba02435ac7b4e57af6e6e938c9510812 FIREFOX_96_0_2_RELEASE
+-- 
+2.25.1
+

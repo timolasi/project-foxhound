@@ -1,0 +1,98 @@
+From b054c28649f5c03d539b0dd508ef8ad5e3d81958 Mon Sep 17 00:00:00 2001
+From: Drew Willcoxon <adw@mozilla.com>
+Date: Tue, 11 Jan 2022 23:16:07 +0000
+Subject: [PATCH 22/33] Bug 1747575 - Fix a bug that prevents search mode from
+ being exited in new windows. r=harry, a=RyanVM,dsmith
+
+This is a regression from bug 1723158, specifically [this change](https://hg.mozilla.org/mozilla-central/rev/904db8e18e53#l4.12).
+
+`this._queryContext` is undefined in the view in new windows. If you press the
+key shortcut to enter search mode immediately in a new window, search mode is
+entered without running a query. Then if you hit Escape or Backspace, we hit the
+`allowEmptySelection` getter and throw an error because `this._queryContext` is
+undefined but we're trying to destructure it. This bug does not happen if you
+first focus the urlbar and then enter search mode because focusing the urlbar
+causes the top-sites query to run.
+
+Differential Revision: https://phabricator.services.mozilla.com/D135583
+---
+ browser/components/urlbar/UrlbarView.jsm      |  2 +-
+ .../urlbar/tests/browser/browser.ini          |  1 -
+ .../browser/browser_searchMode_newWindow.js   | 40 -------------------
+ 3 files changed, 1 insertion(+), 42 deletions(-)
+ delete mode 100644 browser/components/urlbar/tests/browser/browser_searchMode_newWindow.js
+
+diff --git b/browser/components/urlbar/UrlbarView.jsm a/browser/components/urlbar/UrlbarView.jsm
+index a7d604d375cc..2d102b79239e 100644
+--- b/browser/components/urlbar/UrlbarView.jsm
++++ a/browser/components/urlbar/UrlbarView.jsm
+@@ -111,7 +111,7 @@ class UrlbarView {
+   }
+ 
+   get allowEmptySelection() {
+-    let { heuristicResult } = this._queryContext || {};
++    let { heuristicResult } = this._queryContext;
+     return !heuristicResult || !this._shouldShowHeuristic(heuristicResult);
+   }
+ 
+diff --git b/browser/components/urlbar/tests/browser/browser.ini a/browser/components/urlbar/tests/browser/browser.ini
+index 7ce48bfb8bea..af7175e6b585 100644
+--- b/browser/components/urlbar/tests/browser/browser.ini
++++ a/browser/components/urlbar/tests/browser/browser.ini
+@@ -209,7 +209,6 @@ support-files =
+ support-files =
+   searchSuggestionEngine.xml
+   searchSuggestionEngine.sjs
+-[browser_searchMode_newWindow.js]
+ [browser_searchMode_no_results.js]
+ [browser_searchMode_oneOffButton.js]
+ [browser_searchMode_pickResult.js]
+diff --git b/browser/components/urlbar/tests/browser/browser_searchMode_newWindow.js a/browser/components/urlbar/tests/browser/browser_searchMode_newWindow.js
+deleted file mode 100644
+index e5a3eb848a5c..000000000000
+--- b/browser/components/urlbar/tests/browser/browser_searchMode_newWindow.js
++++ /dev/null
+@@ -1,40 +0,0 @@
+-/* Any copyright is dedicated to the Public Domain.
+-   http://creativecommons.org/publicdomain/zero/1.0/ */
+-
+-// Tests immediately entering search mode in a new window and then exiting it.
+-// No errors should be thrown and search mode should be exited successfully.
+-
+-"use strict";
+-
+-add_task(async function escape() {
+-  await doTest(win =>
+-    EventUtils.synthesizeKey("KEY_Escape", { repeat: 2 }, win)
+-  );
+-});
+-
+-add_task(async function backspace() {
+-  await doTest(win => EventUtils.synthesizeKey("KEY_Backspace", {}, win));
+-});
+-
+-async function doTest(exitSearchMode) {
+-  let win = await BrowserTestUtils.openNewBrowserWindow();
+-
+-  // Press accel+K to enter search mode.
+-  await UrlbarTestUtils.promisePopupOpen(win, () =>
+-    EventUtils.synthesizeKey("k", { accelKey: true }, win)
+-  );
+-  await UrlbarTestUtils.assertSearchMode(win, {
+-    engineName: Services.search.defaultEngine.name,
+-    isGeneralPurposeEngine: true,
+-    source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+-    isPreview: false,
+-    entry: "shortcut",
+-  });
+-
+-  // Exit search mode.
+-  await exitSearchMode(win);
+-  await UrlbarTestUtils.assertSearchMode(win, null);
+-
+-  await UrlbarTestUtils.promisePopupClose(win);
+-  await BrowserTestUtils.closeWindow(win);
+-}
+-- 
+2.25.1
+

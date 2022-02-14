@@ -1,0 +1,26 @@
+From eee931c88856fae8feb84ece12b7419d5112973b Mon Sep 17 00:00:00 2001
+From: Dragana Damjanovic <dd.mozilla@gmail.com>
+Date: Wed, 19 Jan 2022 16:29:39 +0000
+Subject: [PATCH 26/33] Bug 1750211 - Return an error in unexpected state.
+ r=necko-reviewers,kershaw, a=dsmith
+
+Differential Revision: https://phabricator.services.mozilla.com/D136005
+---
+ netwerk/protocol/http/Http3Stream.cpp | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git b/netwerk/protocol/http/Http3Stream.cpp a/netwerk/protocol/http/Http3Stream.cpp
+index bd0a61a5e534..679481619c5a 100644
+--- b/netwerk/protocol/http/Http3Stream.cpp
++++ a/netwerk/protocol/http/Http3Stream.cpp
+@@ -272,7 +272,6 @@ nsresult Http3Stream::OnReadSegment(const char* buf, uint32_t count,
+       break;
+     default:
+       MOZ_ASSERT(false, "We are done sending this request!");
+-      rv = NS_ERROR_UNEXPECTED;
+       break;
+   }
+ 
+-- 
+2.25.1
+

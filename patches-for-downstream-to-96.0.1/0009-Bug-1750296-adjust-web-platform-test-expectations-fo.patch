@@ -1,0 +1,53 @@
+From bc9e79597151469a500a191434e81f2624629b85 Mon Sep 17 00:00:00 2001
+From: Sebastian Hengst <archaeopteryx@coole-files.de>
+Date: Mon, 17 Jan 2022 16:06:12 +0100
+Subject: [PATCH 09/33] Bug 1750296 - adjust web-platform test expectations for
+ network.cookie.sameSite.schemeful being set to `false`. a=Aryx
+
+Bug 1750264 had switched the preference to `false`.
+---
+ .../schemeful-navigation.tentative.html.ini                   | 4 +++-
+ .../schemeful-subresource.tentative.html.ini                  | 4 ----
+ .../schemeful-websockets.sub.tentative.html.ini               | 4 ----
+ 3 files changed, 3 insertions(+), 9 deletions(-)
+ delete mode 100644 testing/web-platform/meta/cookies/schemeful-same-site/schemeful-subresource.tentative.html.ini
+ delete mode 100644 testing/web-platform/meta/cookies/schemeful-same-site/schemeful-websockets.sub.tentative.html.ini
+
+diff --git b/testing/web-platform/meta/cookies/schemeful-same-site/schemeful-navigation.tentative.html.ini a/testing/web-platform/meta/cookies/schemeful-same-site/schemeful-navigation.tentative.html.ini
+index 97d354032387..fe759a6aea74 100644
+--- b/testing/web-platform/meta/cookies/schemeful-same-site/schemeful-navigation.tentative.html.ini
++++ a/testing/web-platform/meta/cookies/schemeful-same-site/schemeful-navigation.tentative.html.ini
+@@ -3,7 +3,9 @@
+     if (os == "mac") and not debug: ["OK", "TIMEOUT"]
+     if (os == "linux") and (processor == "x86"): ["OK", "TIMEOUT"]
+   [Navigate cross-scheme]
+-    expected: FAIL
++    expected:
++      if (os == "mac") and not debug: ["PASS", "NOTRUN"]
++      if (os == "linux") and (processor == "x86"): ["PASS", "NOTRUN"]
+   [Navigate same-scheme]
+     expected:
+       if (os == "mac") and not debug: ["PASS", "TIMEOUT"]
+diff --git b/testing/web-platform/meta/cookies/schemeful-same-site/schemeful-subresource.tentative.html.ini a/testing/web-platform/meta/cookies/schemeful-same-site/schemeful-subresource.tentative.html.ini
+deleted file mode 100644
+index bd6a658323cd..000000000000
+--- b/testing/web-platform/meta/cookies/schemeful-same-site/schemeful-subresource.tentative.html.ini
++++ /dev/null
+@@ -1,4 +0,0 @@
+-[schemeful-subresource.tentative.html]
+-  [Cross-scheme subresources cannot sent lax/strict cookies]
+-    expected: FAIL
+-
+diff --git b/testing/web-platform/meta/cookies/schemeful-same-site/schemeful-websockets.sub.tentative.html.ini a/testing/web-platform/meta/cookies/schemeful-same-site/schemeful-websockets.sub.tentative.html.ini
+deleted file mode 100644
+index eb79022906f6..000000000000
+--- b/testing/web-platform/meta/cookies/schemeful-same-site/schemeful-websockets.sub.tentative.html.ini
++++ /dev/null
+@@ -1,4 +0,0 @@
+-[schemeful-websockets.sub.tentative.html]
+-  [Cross-scheme WebSockets are cross-site]
+-    expected: FAIL
+-
+-- 
+2.25.1
+
